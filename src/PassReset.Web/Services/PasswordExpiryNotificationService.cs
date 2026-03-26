@@ -40,8 +40,8 @@ internal sealed class PasswordExpiryNotificationService : BackgroundService
 
             if (stoppingToken.IsCancellationRequested) break;
 
-            // Reset dedup set on each new day's run
-            _notifiedToday.RemoveWhere(entry => entry.Date < DateOnly.FromDateTime(DateTime.UtcNow));
+            // Clear dedup set at the start of each daily run — entries are only valid for the current day.
+            _notifiedToday.Clear();
 
             await RunNotificationsAsync(stoppingToken);
         }

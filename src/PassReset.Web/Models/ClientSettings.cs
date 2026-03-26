@@ -24,6 +24,7 @@ public class ClientSettings
 
 public class Recaptcha
 {
+    public bool Enabled { get; set; }
     public string? LanguageCode { get; set; }
     public string? SiteKey { get; set; }
 
@@ -49,6 +50,7 @@ public class Alerts
     public string? ErrorPwnedPassword { get; set; }
     public string? ErrorPasswordTooYoung { get; set; }
     public string? ErrorRateLimitExceeded { get; set; }
+    public string? ErrorPwnedPasswordCheckFailed { get; set; }
 }
 
 public class ErrorsPasswordForm

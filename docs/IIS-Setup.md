@@ -1,6 +1,6 @@
 ﻿# PassReset — IIS Setup Guide
 
-Step-by-step instructions for deploying PassReset on **Windows Server 2022** with **IIS 10**.
+Step-by-step instructions for deploying PassReset on **Windows Server 2019 / 2022 / 2025** with **IIS 10**.
 
 ---
 
@@ -8,7 +8,7 @@ Step-by-step instructions for deploying PassReset on **Windows Server 2022** wit
 
 | Requirement | Version | Notes |
 |---|---|---|
-| Windows Server | 2022 | 2019 also works |
+| Windows Server | 2019 / 2022 / 2025 | All editions supported |
 | IIS | 10 | Included with Windows Server |
 | .NET Hosting Bundle | 10.x | Installs ASP.NET Core Module for IIS |
 | Node.js | 20 LTS+ | Build machine only — not needed on server |
@@ -47,10 +47,11 @@ Step-by-step instructions for deploying PassReset on **Windows Server 2022** wit
 ```powershell
 Install-WindowsFeature -Name `
     Web-Server, Web-WebServer, Web-Static-Content, Web-Default-Doc,
-    Web-Http-Errors, Web-ASPNET45, Web-Asp-Net45, Web-Http-Logging,
-    Web-Filtering, Web-Mgmt-Console `
+    Web-Http-Errors, Web-Http-Logging, Web-Filtering, Web-Mgmt-Console `
     -IncludeManagementTools
 ```
+
+> **Note:** `Web-ASPNET45` and `Web-Asp-Net45` are .NET Framework 4.x features. They are **not** required for ASP.NET Core and do not exist on Server 2019+. Do not include them.
 
 ---
 
@@ -58,18 +59,30 @@ Install-WindowsFeature -Name `
 
 The Hosting Bundle installs the ASP.NET Core runtime **and** the IIS in-process hosting module. It is **required** — do not install the runtime-only package.
 
-1. Download from: **https://dotnet.microsoft.com/download/dotnet/10.0**
-   - Choose: **ASP.NET Core Runtime → Hosting Bundle**
-2. Run the installer as Administrator.
-3. After install, run `iisreset` from an elevated command prompt.
-4. Verify installation:
+### Option A — Direct download
+
+Download the current Windows Hosting Bundle installer directly:
+
+**https://dotnet.microsoft.com/permalink/dotnetcore-current-windows-runtime-bundle-installer**
+
+Run the installer as Administrator, then run `iisreset`.
+
+### Option B — winget (Windows Package Manager)
+
+```powershell
+winget install Microsoft.DotNet.HostingBundle.10
+```
+
+> If winget is not available (older Server installs), install it via the [App Installer](https://aka.ms/getwinget) or use Option A.
+
+### Verify installation
 
 ```powershell
 dotnet --list-runtimes
 # Should show: Microsoft.AspNetCore.App 10.x.x
 ```
 
-> **Important:** If you install the Hosting Bundle after IIS, IIS must be restarted (`iisreset`) for the ASP.NET Core Module to register correctly.
+> **Important:** If you install the Hosting Bundle after IIS is already running, IIS must be restarted (`iisreset`) for the ASP.NET Core Module to register correctly.
 
 ---
 
@@ -169,7 +182,7 @@ On the **IIS server**, run as **Administrator**:
     -HttpsPort        443 `
     -CertThumbprint   "PASTE_THUMBPRINT_HERE" `
     -AppPoolIdentity  "YOURDOMAIN\svc-passreset" `
-    -AppPoolPassword  "ServiceAccountPassword"
+    -AppPoolPassword  (Read-Host 'App pool password' -AsSecureString)
 ```
 
 The installer:
@@ -209,6 +222,7 @@ Edit `C:\inetpub\PassReset\appsettings.Production.json`:
     "UseEmail": true,
     "ShowPasswordMeter": true,
     "Recaptcha": {
+      "Enabled": false,
       "SiteKey": "",
       "PrivateKey": ""
     }

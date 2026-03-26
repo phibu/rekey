@@ -1,7 +1,7 @@
 ﻿#Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Installs PassReset on IIS (Windows Server 2022 / IIS 10).
+    Installs PassReset on IIS (Windows Server 2019 / 2022 / 2025, IIS 10).
 
 .DESCRIPTION
     This script:
@@ -37,7 +37,8 @@
     Leave empty to use ApplicationPoolIdentity (built-in virtual account).
 
 .PARAMETER AppPoolPassword
-    Password for AppPoolIdentity service account. Only used when AppPoolIdentity is set.
+    Password for AppPoolIdentity service account as a SecureString. Only used when AppPoolIdentity is set.
+    Pass via: -AppPoolPassword (Read-Host 'App pool password' -AsSecureString)
 
 .EXAMPLE
     # Minimal — uses built-in app pool identity, no HTTPS binding wired yet:
@@ -47,7 +48,7 @@
     # Full — service account + certificate:
     .\Install-PassReset.ps1 `
         -AppPoolIdentity "CORP\svc-passreset" `
-        -AppPoolPassword "S3cr3tP@ss!" `
+        -AppPoolPassword (Read-Host 'App pool password' -AsSecureString) `
         -CertThumbprint "A1B2C3D4E5F6..."
 #>
 [CmdletBinding(SupportsShouldProcess)]
@@ -58,8 +59,8 @@ param(
     [string] $PublishFolder   = '',
     [int]    $HttpsPort       = 443,
     [string] $CertThumbprint  = '',
-    [string] $AppPoolIdentity = '',
-    [string] $AppPoolPassword = ''
+    [string]       $AppPoolIdentity = '',
+    [SecureString] $AppPoolPassword = $null
 )
 
 Set-StrictMode -Version Latest
@@ -67,10 +68,10 @@ $ErrorActionPreference = 'Stop'
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function Write-Step  { param([string]$Msg) Write-Host "`n▶ $Msg" -ForegroundColor Cyan }
-function Write-Ok    { param([string]$Msg) Write-Host "  ✓ $Msg" -ForegroundColor Green }
-function Write-Warn  { param([string]$Msg) Write-Host "  ⚠ $Msg" -ForegroundColor Yellow }
-function Abort       { param([string]$Msg) Write-Host "`n✗ $Msg`n" -ForegroundColor Red; exit 1 }
+function Write-Step  { param([string]$Msg) Write-Host "`n[>>] $Msg" -ForegroundColor Cyan }
+function Write-Ok    { param([string]$Msg) Write-Host "  [OK] $Msg" -ForegroundColor Green }
+function Write-Warn  { param([string]$Msg) Write-Host "  [!!] $Msg" -ForegroundColor Yellow }
+function Abort       { param([string]$Msg) Write-Host "`n[ERR] $Msg`n" -ForegroundColor Red; exit 1 }
 
 # ─── 1. Prerequisites ─────────────────────────────────────────────────────────
 
@@ -82,15 +83,16 @@ if (-not (Get-Service -Name W3SVC -ErrorAction SilentlyContinue)) {
 }
 Write-Ok 'IIS is installed'
 
-# Required IIS features
+# Required IIS features — valid on Windows Server 2019, 2022, and 2025.
+# Note: Web-ASPNET45 / Web-Asp-Net45 are .NET Framework 4.x features and are NOT
+# required for ASP.NET Core. They do not exist on Server 2019+ and must not be listed.
+# The ASP.NET Core Module is installed by the .NET Hosting Bundle (checked below).
 $requiredFeatures = @(
     'Web-Server',
     'Web-WebServer',
     'Web-Static-Content',
     'Web-Default-Doc',
     'Web-Http-Errors',
-    'Web-ASPNET45',      # needed even for .NET Core / in-process hosting
-    'Web-Asp-Net45',
     'Web-Http-Logging',
     'Web-Filtering',
     'Web-Mgmt-Console'
@@ -174,7 +176,7 @@ if ($siteExists) {
 }
 
 # Copy publish output (robocopy: /MIR = mirror, /NFL /NDL = quiet)
-$rc = robocopy $PublishFolder $PhysicalPath /MIR /NFL /NDL /NJH /NJS /R:3 /W:5
+robocopy $PublishFolder $PhysicalPath /MIR /NFL /NDL /NJH /NJS /R:3 /W:5 | Out-Null
 if ($LASTEXITCODE -ge 8) {
     Abort "robocopy failed with exit code $LASTEXITCODE"
 }
@@ -196,9 +198,16 @@ Set-ItemProperty "IIS:\AppPools\$AppPoolName" startMode 'AlwaysRunning'
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" autoStart $true
 
 if ($AppPoolIdentity) {
+    if (-not $AppPoolPassword) {
+        Abort 'AppPoolPassword must be supplied when AppPoolIdentity is set. Use: -AppPoolPassword (Read-Host ''App pool password'' -AsSecureString)'
+    }
+    $bstr          = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($AppPoolPassword)
+    $plainPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
     Set-ItemProperty "IIS:\AppPools\$AppPoolName" processModel.userName     $AppPoolIdentity
-    Set-ItemProperty "IIS:\AppPools\$AppPoolName" processModel.password     $AppPoolPassword
+    Set-ItemProperty "IIS:\AppPools\$AppPoolName" processModel.password     $plainPassword
     Set-ItemProperty "IIS:\AppPools\$AppPoolName" processModel.identityType 3  # SpecificUser
+    $plainPassword = $null
     Write-Ok "App pool identity: $AppPoolIdentity"
 } else {
     Set-ItemProperty "IIS:\AppPools\$AppPoolName" processModel.identityType 4  # ApplicationPoolIdentity
@@ -301,51 +310,65 @@ $prodConfig = Join-Path $PhysicalPath 'appsettings.Production.json'
 if (Test-Path $prodConfig) {
     Write-Warn "appsettings.Production.json already exists — not overwriting. Edit it manually."
 } else {
-    @'
-{
-  "WebSettings": {
-    "EnableHttpsRedirect": true,
-    "UseDebugProvider": false
-  },
-  "PasswordChangeOptions": {
-    "UseAutomaticContext": true,
-    "IdTypeForUser": "UserPrincipalName",
-    "DefaultDomain": "yourdomain.com",
-    "ClearMustChangePasswordFlag": true,
-    "EnforceMinimumPasswordAge": true,
-    "RestrictedAdGroups": [ "Domain Admins", "Enterprise Admins", "Schema Admins", "Administrators" ],
-    "AllowedAdGroups": [],
-    "LdapHostnames": [ "" ],
-    "LdapPort": 389,
-    "LdapUsername": "",
-    "LdapPassword": ""
-  },
-  "SmtpSettings": {
-    "Host": "smtp-relay.yourdomain.com",
-    "Port": 587,
-    "UseSsl": true,
-    "Username": "",
-    "Password": "",
-    "FromAddress": "passcore@yourdomain.com",
-    "FromName": "PassReset Self-Service"
-  },
-  "EmailNotificationSettings": {
-    "Enabled": false
-  },
-  "PasswordExpiryNotificationSettings": {
-    "Enabled": false,
-    "PassResetUrl": "https://passreset.yourdomain.com"
-  },
-  "ClientSettings": {
-    "UseEmail": true,
-    "ShowPasswordMeter": true,
-    "Recaptcha": {
-      "SiteKey": "",
-      "PrivateKey": ""
+    $config = [PSCustomObject]@{
+        WebSettings = [PSCustomObject]@{
+            EnableHttpsRedirect = $true
+            UseDebugProvider    = $false
+        }
+        PasswordChangeOptions = [PSCustomObject]@{
+            UseAutomaticContext         = $true
+            IdTypeForUser               = 'UserPrincipalName'
+            DefaultDomain               = 'yourdomain.com'
+            ClearMustChangePasswordFlag = $true
+            EnforceMinimumPasswordAge   = $true
+            UpdateLastPassword          = $false
+            RestrictedAdGroups          = @('Domain Admins', 'Enterprise Admins', 'Schema Admins', 'Administrators')
+            AllowedAdGroups             = @()
+            LdapHostnames               = @('')
+            LdapPort                    = 636
+            LdapUseSsl                  = $true
+            LdapUsername                = ''
+            LdapPassword                = ''
+        }
+        SmtpSettings = [PSCustomObject]@{
+            Host        = 'smtp-relay.yourdomain.com'
+            Port        = 587
+            UseSsl      = $true
+            Username    = ''
+            Password    = ''
+            FromAddress = 'passreset@yourdomain.com'
+            FromName    = 'PassReset Self-Service'
+        }
+        EmailNotificationSettings = [PSCustomObject]@{
+            Enabled      = $false
+            Subject      = 'Your password has been changed'
+            BodyTemplate = "Hello {Username},`n`nYour password was changed successfully on {Timestamp} from IP address {IpAddress}.`n`nIf you did not make this change, contact IT Support immediately."
+        }
+        PasswordExpiryNotificationSettings = [PSCustomObject]@{
+            Enabled                 = $false
+            DaysBeforeExpiry        = 14
+            NotificationTimeUtc     = '08:00'
+            PassResetUrl            = 'https://passreset.yourdomain.com'
+            ExpiryEmailSubject      = 'Your password will expire soon'
+            ExpiryEmailBodyTemplate = "Hello {Username},`n`nYour Active Directory password will expire in {DaysRemaining} day(s) on {ExpiryDate}.`n`nPlease change your password before it expires: {PassResetUrl}"
+        }
+        ClientSettings = [PSCustomObject]@{
+            UseEmail              = $true
+            ShowPasswordMeter     = $true
+            UsePasswordGeneration = $false
+            MinimumDistance       = 0
+            PasswordEntropy       = 16
+            MinimumScore          = 0
+            Recaptcha             = [PSCustomObject]@{
+                Enabled      = $false
+                SiteKey      = ''
+                PrivateKey   = ''
+                LanguageCode = 'en'
+            }
+        }
     }
-  }
-}
-'@ | Set-Content -Path $prodConfig -Encoding UTF8
+
+    $config | ConvertTo-Json -Depth 10 | Set-Content -Path $prodConfig -Encoding UTF8
     Write-Ok "Written to $prodConfig — fill in your domain details before starting the site."
 }
 
@@ -362,16 +385,16 @@ Write-Ok "Site $SiteName started"
 # ─── Done ─────────────────────────────────────────────────────────────────────
 
 Write-Host ''
-Write-Host '══════════════════════════════════════════════════════' -ForegroundColor Cyan
+Write-Host '======================================================' -ForegroundColor Cyan
 Write-Host '  PassReset installed successfully.' -ForegroundColor Green
 Write-Host ''
 Write-Host '  Next steps:' -ForegroundColor Yellow
 Write-Host "  1. Edit $prodConfig"
-Write-Host '     • Set DefaultDomain, SmtpSettings, Recaptcha keys, etc.'
+Write-Host '     - Set DefaultDomain, SmtpSettings, Recaptcha keys, etc.'
 if (-not $CertThumbprint) {
 Write-Host '  2. Add an HTTPS certificate binding in IIS Manager.'
 }
 Write-Host '  3. Browse to the site and test with UseDebugProvider: true first.'
 Write-Host '  4. Set UseDebugProvider: false when ready for production.'
-Write-Host '══════════════════════════════════════════════════════' -ForegroundColor Cyan
+Write-Host '======================================================' -ForegroundColor Cyan
 Write-Host ''

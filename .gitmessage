@@ -1,0 +1,10 @@
+# <type>(<scope>): <subject>
+#
+# Types: feat | fix | refactor | docs | chore | test | ci | perf | style
+# Scopes: web | provider | common | deploy | docs | ci | deps
+#
+# Body (optional — wrap at 72 chars):
+#
+#
+# Footer (optional — BREAKING CHANGE / closes #N):
+#

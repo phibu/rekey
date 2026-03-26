@@ -46,7 +46,10 @@ public class PasswordChangeOptions : IAppSettings
     }
 
     /// <inheritdoc />
-    public int LdapPort { get; set; }
+    public int LdapPort { get; set; } = 636;
+
+    /// <inheritdoc />
+    public bool LdapUseSsl { get; set; } = true;
 
     /// <inheritdoc />
     public string[] LdapHostnames

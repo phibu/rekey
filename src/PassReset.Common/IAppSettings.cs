@@ -10,9 +10,15 @@ public interface IAppSettings
 
     /// <summary>
     /// Gets or sets the LDAP port.
-    /// Optional, defaults to 636 -- the default port for LDAPS (LDAP over TLS).
+    /// Defaults to 636 (LDAPS). Use 389 for plain LDAP (not recommended).
     /// </summary>
     int LdapPort { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether to use LDAPS (LDAP over TLS/SSL).
+    /// Defaults to true. Set to false only when LDAPS is unavailable.
+    /// </summary>
+    bool LdapUseSsl { get; set; }
 
     /// <summary>
     /// Gets or sets the LDAP hostnames.

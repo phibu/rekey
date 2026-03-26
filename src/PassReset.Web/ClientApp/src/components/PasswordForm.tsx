@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import Alert from '@mui/material/Alert';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
@@ -59,6 +59,11 @@ export function PasswordForm({ settings, onSuccess }: Props) {
   const errors_ = settings.errorsPasswordForm ?? {};
   const regex   = settings.validationRegex    ?? {};
 
+  // Build validation regexes once at mount. Try/catch guards against invalid patterns
+  // in config — a bad pattern silently disables that check rather than breaking the form.
+  const emailRx    = useMemo(() => { try { return regex.emailRegex    ? new RegExp(regex.emailRegex)    : null; } catch { return null; } }, [regex.emailRegex]);
+  const usernameRx = useMemo(() => { try { return regex.usernameRegex ? new RegExp(regex.usernameRegex) : null; } catch { return null; } }, [regex.usernameRegex]);
+
   const [username, setUsername]                 = useState('');
   const [currentPassword, setCurrentPassword]   = useState('');
   const [newPassword, setNewPassword]           = useState('');
@@ -71,7 +76,9 @@ export function PasswordForm({ settings, onSuccess }: Props) {
   const [formErrors, setFormErrors]             = useState<FormErrors>({});
   const [submitting, setSubmitting]             = useState(false);
 
-  const { executeRecaptcha } = useRecaptcha(settings.recaptcha?.siteKey);
+  const { executeRecaptcha } = useRecaptcha(
+    settings.recaptcha?.enabled ? settings.recaptcha.siteKey : undefined
+  );
 
   function validate(): FormErrors {
     const errs: FormErrors = {};
@@ -82,11 +89,11 @@ export function PasswordForm({ settings, onSuccess }: Props) {
     if (!newPassword)           { errs.newPassword     = required; }
     if (!newPasswordVerify)     { errs.newPasswordVerify = required; }
 
-    if (username && settings.useEmail && regex.emailRegex) {
-      if (!new RegExp(regex.emailRegex).test(username))
+    if (username && settings.useEmail && emailRx) {
+      if (!emailRx.test(username))
         errs.username = errors_.usernameEmailPattern ?? 'Please enter a valid email address.';
-    } else if (username && regex.usernameRegex) {
-      if (!new RegExp(regex.usernameRegex).test(username))
+    } else if (username && usernameRx) {
+      if (!usernameRx.test(username))
         errs.username = errors_.usernamePattern ?? 'Please enter a valid username.';
     }
 
@@ -113,7 +120,7 @@ export function PasswordForm({ settings, onSuccess }: Props) {
 
     setSubmitting(true);
     try {
-      const recaptchaToken = settings.recaptcha?.siteKey
+      const recaptchaToken = settings.recaptcha?.enabled && settings.recaptcha?.siteKey
         ? await executeRecaptcha()
         : '';
 

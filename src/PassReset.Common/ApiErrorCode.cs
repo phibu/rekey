@@ -52,4 +52,7 @@ public enum ApiErrorCode
 
     /// <summary>Too many requests; rate limit exceeded.</summary>
     RateLimitExceeded = 15,
+
+    /// <summary>The breach-password check service was unreachable. The change was not blocked — try again.</summary>
+    PwnedPasswordCheckFailed = 16,
 }

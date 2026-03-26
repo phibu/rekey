@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
 
 namespace PassReset.PasswordProvider;
 
@@ -31,5 +32,5 @@ public class NativeMethods
         string password,
         LogonTypes logonType,
         LogonProviders logonProvider,
-        out IntPtr token);
+        out SafeAccessTokenHandle token);
 }

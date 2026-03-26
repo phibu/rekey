@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: src/PassReset.Web/ClientApp/package-lock.json
+
+      - name: Install npm dependencies
+        working-directory: src/PassReset.Web/ClientApp
+        run: npm ci
+
+      - name: Publish
+        run: |
+          $version = "${{ github.ref_name }}"
+          pwsh -NonInteractive -File deploy/Publish-PassReset.ps1 -Version $version
+        shell: pwsh
+
+      - name: Upload release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = "${{ github.ref_name }}"
+          $zip = Get-ChildItem deploy/PassReset-*.zip | Select-Object -First 1
+          gh release create $version $zip.FullName `
+            --title "PassReset $version" `
+            --generate-notes
+        shell: pwsh

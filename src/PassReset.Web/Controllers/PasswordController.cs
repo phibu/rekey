@@ -82,9 +82,9 @@ public sealed class PasswordController : ControllerBase
             return BadRequest(result);
         }
 
-        // reCAPTCHA v3 validation (skipped if SiteKey is unconfigured)
+        // reCAPTCHA v3 validation (skipped unless Enabled = true and PrivateKey is set)
         var recaptchaConfig = settings.Recaptcha;
-        if (!string.IsNullOrWhiteSpace(recaptchaConfig?.PrivateKey))
+        if (recaptchaConfig?.Enabled == true && !string.IsNullOrWhiteSpace(recaptchaConfig.PrivateKey))
         {
             if (!await ValidateRecaptchaAsync(model.Recaptcha, recaptchaConfig.PrivateKey, clientIp))
             {
@@ -144,17 +144,23 @@ public sealed class PasswordController : ControllerBase
     {
         try
         {
-            var response = await _recaptchaHttp.PostAsync(
-                $"recaptcha/api/siteverify?secret={Uri.EscapeDataString(privateKey)}" +
-                $"&response={Uri.EscapeDataString(token)}" +
-                $"&remoteip={Uri.EscapeDataString(clientIp)}",
-                content: null);
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["secret"]   = privateKey,
+                ["response"] = token,
+                ["remoteip"] = clientIp,
+            });
+
+            var response = await _recaptchaHttp.PostAsync("recaptcha/api/siteverify", content);
 
             if (!response.IsSuccessStatusCode) return false;
 
             var json = await response.Content.ReadFromJsonAsync<RecaptchaResponse>();
-            // v3 returns a score 0.0–1.0; treat >= 0.5 as human
-            return json?.Success == true && json.Score >= 0.5f;
+            // v3 returns a score 0.0–1.0; treat >= 0.5 as human.
+            // Action must match the client-side action to prevent token replay from other pages.
+            return json?.Success == true
+                && json.Score >= 0.5f
+                && string.Equals(json.Action, "change_password", StringComparison.OrdinalIgnoreCase);
         }
         catch
         {

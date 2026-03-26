@@ -1,5 +1,6 @@
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
 using PassReset.Common;
 using PassReset.PasswordProvider;
 using PassReset.Web.Helpers;
@@ -23,6 +24,7 @@ builder.Services.Configure<PasswordExpiryNotificationSettings>(
     builder.Configuration.GetSection(nameof(PasswordExpiryNotificationSettings)));
 builder.Services.Configure<PasswordChangeOptions>(
     builder.Configuration.GetSection(nameof(PasswordChangeOptions)));
+builder.Services.AddSingleton<IValidateOptions<PasswordChangeOptions>, PasswordChangeOptionsValidator>();
 
 // ─── Provider registration (runtime config flag, no compile-time conditionals) ─
 var webSettings = builder.Configuration

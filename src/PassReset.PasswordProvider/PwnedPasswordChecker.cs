@@ -19,10 +19,11 @@ internal static class PwnedPasswordChecker
     };
 
     /// <summary>
-    /// Returns true if the password appears in the HaveIBeenPwned database.
-    /// Fails closed — returns true (treat as pwned) if the API is unreachable.
+    /// Checks whether the password appears in the HaveIBeenPwned database.
+    /// Returns <see langword="true"/> if confirmed pwned, <see langword="false"/> if confirmed clean,
+    /// or <see langword="null"/> if the API was unreachable so the caller can surface a distinct error.
     /// </summary>
-    internal static bool IsPwnedPassword(string plaintext)
+    internal static bool? IsPwnedPassword(string plaintext)
     {
         try
         {
@@ -48,8 +49,9 @@ internal static class PwnedPasswordChecker
         }
         catch
         {
-            // Fail closed: if the API is unreachable, reject the password to be safe.
-            return true;
+            // API unreachable — return null so the caller can surface a distinct error
+            // rather than silently blocking the password change.
+            return null;
         }
     }
 

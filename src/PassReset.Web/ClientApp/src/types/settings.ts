@@ -4,6 +4,7 @@ export interface ValidationRegex {
 }
 
 export interface RecaptchaSettings {
+  enabled?: boolean;
   siteKey?: string;
   languageCode?: string;
 }
@@ -46,6 +47,7 @@ export interface Alerts {
   errorPwnedPassword?: string;
   errorPasswordTooYoung?: string;
   errorRateLimitExceeded?: string;
+  errorPwnedPasswordCheckFailed?: string;
 }
 
 export interface ClientSettings {
@@ -100,4 +102,5 @@ export const ApiErrorCode = {
   PasswordTooYoung: 13,
   AccountDisabled: 14,
   RateLimitExceeded: 15,
+  PwnedPasswordCheckFailed: 16,
 } as const;

@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: src/PassReset.Web/ClientApp/package-lock.json
+
+      - name: Restore .NET dependencies
+        run: dotnet restore src/PassReset.sln
+
+      - name: Build solution
+        run: dotnet build src/PassReset.sln --no-restore --configuration Release
+
+      - name: Install npm dependencies
+        working-directory: src/PassReset.Web/ClientApp
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: src/PassReset.Web/ClientApp
+        run: npm run build

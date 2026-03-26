@@ -15,7 +15,9 @@ src/PassReset.Web/wwwroot/
 node_modules/
 
 # ── Deploy publish output and release zips ───────────────────────────────────
+# Zips are distributed exclusively via GitHub Releases — never commit binaries.
 deploy/publish/
+deploy/*.zip
 
 # ── Secrets — never commit ───────────────────────────────────────────────────
 appsettings.Production.json
@@ -29,6 +31,10 @@ Todo.MD
 .claude/
 .bg-shell/
 .gsd/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
 
 # ── OS ───────────────────────────────────────────────────────────────────────
 .DS_Store

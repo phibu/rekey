@@ -51,10 +51,16 @@ public sealed class PasswordChangeProvider : IPasswordChangeProvider
             }
 
             // Reject passwords found in public breach databases
-            if (PwnedPasswordChecker.IsPwnedPassword(newPassword))
+            var pwnedResult = PwnedPasswordChecker.IsPwnedPassword(newPassword);
+            if (pwnedResult == true)
             {
                 _logger.LogError("New password for {Username} is publicly known (HaveIBeenPwned)", fixedUsername);
                 return new ApiErrorItem(ApiErrorCode.PwnedPassword);
+            }
+            if (pwnedResult == null)
+            {
+                _logger.LogWarning("HaveIBeenPwned API was unreachable for user {Username} — breach check skipped", fixedUsername);
+                return new ApiErrorItem(ApiErrorCode.PwnedPasswordCheckFailed);
             }
 
             _logger.LogInformation("PerformPasswordChange for user {Username}", fixedUsername);
@@ -181,8 +187,11 @@ public sealed class PasswordChangeProvider : IPasswordChangeProvider
             return true;
 
         if (NativeMethods.LogonUser(upn, string.Empty, currentPassword,
-                NativeMethods.LogonTypes.Network, NativeMethods.LogonProviders.Default, out _))
+                NativeMethods.LogonTypes.Network, NativeMethods.LogonProviders.Default, out var token))
+        {
+            token.Dispose();
             return true;
+        }
 
         var errorCode = System.Runtime.InteropServices.Marshal.GetLastWin32Error();
         _logger.LogDebug("ValidateUserCredentials Win32 error code: {ErrorCode}", errorCode);
@@ -311,15 +320,19 @@ public sealed class PasswordChangeProvider : IPasswordChangeProvider
         {
             userPrincipal.ChangePassword(currentPassword, newPassword);
         }
-        catch
+        catch (System.Runtime.InteropServices.COMException comEx)
         {
+            // COMException is thrown by System.DirectoryServices when the LDAP operation is
+            // rejected at the protocol level — typically because the service account has
+            // "Reset Password" rights but not "Change Password" rights on the target object.
+            // SetPassword is an administrative reset and is only attempted with explicit credentials.
             if (_options.UseAutomaticContext)
             {
-                _logger.LogWarning("ChangePassword failed and SetPassword will not be attempted (UseAutomaticContext=true)");
+                _logger.LogWarning(comEx, "ChangePassword failed (HRESULT={HResult}) and SetPassword will not be attempted (UseAutomaticContext=true)", comEx.HResult);
                 throw;
             }
 
-            // Fallback to SetPassword when running with explicit service-account credentials
+            _logger.LogWarning(comEx, "ChangePassword failed (HRESULT={HResult}), falling back to SetPassword for user {User}", comEx.HResult, userPrincipal.Name);
             userPrincipal.SetPassword(newPassword);
             _logger.LogDebug("Password set via SetPassword fallback for user {User}", userPrincipal.Name);
         }
@@ -346,19 +359,29 @@ public sealed class PasswordChangeProvider : IPasswordChangeProvider
             return new PrincipalContext(ContextType.Domain);
         }
 
-        var domain = $"{_options.LdapHostnames.First()}:{_options.LdapPort}";
-        _logger.LogDebug("Acquiring domain context for {Domain}", domain);
+        var server = $"{_options.LdapHostnames.First()}:{_options.LdapPort}";
+        _logger.LogDebug("Acquiring domain context for {Server} (SSL={UseSsl})", server, _options.LdapUseSsl);
 
-        return new PrincipalContext(ContextType.Domain, domain, _options.LdapUsername, _options.LdapPassword);
+        var contextOptions = _options.LdapUseSsl
+            ? ContextOptions.Negotiate | ContextOptions.SecureSocketLayer
+            : ContextOptions.Negotiate;
+
+        return new PrincipalContext(ContextType.Domain, server, null, contextOptions, _options.LdapUsername, _options.LdapPassword);
     }
 
-    private DirectoryEntry AcquireDomainEntry() =>
-        _options.UseAutomaticContext
-            ? Domain.GetCurrentDomain().GetDirectoryEntry()
-            : new DirectoryEntry(
-                $"{_options.LdapHostnames.First()}:{_options.LdapPort}",
-                _options.LdapUsername,
-                _options.LdapPassword);
+    private DirectoryEntry AcquireDomainEntry()
+    {
+        if (_options.UseAutomaticContext)
+            return Domain.GetCurrentDomain().GetDirectoryEntry();
+
+        var scheme   = _options.LdapUseSsl ? "LDAPS" : "LDAP";
+        var authType = _options.LdapUseSsl ? AuthenticationTypes.SecureSocketsLayer : AuthenticationTypes.Secure;
+        return new DirectoryEntry(
+            $"{scheme}://{_options.LdapHostnames.First()}:{_options.LdapPort}",
+            _options.LdapUsername,
+            _options.LdapPassword,
+            authType);
+    }
 
     private int AcquireDomainPasswordLength()
     {

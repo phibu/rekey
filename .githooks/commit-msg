@@ -1,0 +1,14 @@
+#!/bin/sh
+# Enforce Conventional Commits: type(scope): subject
+# Types: feat|fix|refactor|docs|chore|test|ci|perf|style
+MSG=$(cat "$1")
+PATTERN='^(feat|fix|refactor|docs|chore|test|ci|perf|style)(\([a-z0-9/-]+\))?: .+'
+if ! echo "$MSG" | grep -qE "$PATTERN"; then
+  echo ""
+  echo "[ERR] Commit message does not follow Conventional Commits format."
+  echo "      Expected: type(scope): subject"
+  echo "      Example:  feat(web): add recaptcha toggle"
+  echo "      Types:    feat fix refactor docs chore test ci perf style"
+  echo ""
+  exit 1
+fi
