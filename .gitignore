@@ -16,7 +16,6 @@ node_modules/
 
 # ── Deploy publish output and release zips ───────────────────────────────────
 deploy/publish/
-deploy/PassReset-*.zip
 
 # ── Secrets — never commit ───────────────────────────────────────────────────
 appsettings.Production.json
@@ -24,14 +23,12 @@ appsettings.*.local.json
 secrets.json
 *.pfx
 *.p12
+Todo.MD
 
 # ── Local tooling / IDE metadata ─────────────────────────────────────────────
 .claude/
 .bg-shell/
 .gsd/
-
-# ── Original upstream reference (kept locally for reference, not part of V2) ─
-passcore/
 
 # ── OS ───────────────────────────────────────────────────────────────────────
 .DS_Store
