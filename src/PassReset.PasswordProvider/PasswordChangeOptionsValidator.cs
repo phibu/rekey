@@ -7,7 +7,7 @@ namespace PassReset.PasswordProvider;
 /// mis-configuration is caught immediately with a clear error rather than producing
 /// a cryptic LDAP socket error at runtime.
 /// </summary>
-internal sealed class PasswordChangeOptionsValidator : IValidateOptions<PasswordChangeOptions>
+public sealed class PasswordChangeOptionsValidator : IValidateOptions<PasswordChangeOptions>
 {
     public ValidateOptionsResult Validate(string? name, PasswordChangeOptions options)
     {
