@@ -46,7 +46,7 @@
 .EXAMPLE
     # Full — service account + certificate:
     .\Install-ReKey.ps1 `
-        -AppPoolIdentity "CORP\svc-passcore" `
+        -AppPoolIdentity "CORP\svc-rekey" `
         -AppPoolPassword "S3cr3tP@ss!" `
         -CertThumbprint "A1B2C3D4E5F6..."
 #>
@@ -334,7 +334,7 @@ if (Test-Path $prodConfig) {
   },
   "PasswordExpiryNotificationSettings": {
     "Enabled": false,
-    "ReKeyUrl": "https://passcore.yourdomain.com"
+    "ReKeyUrl": "https://rekey.yourdomain.com"
   },
   "ClientSettings": {
     "UseEmail": true,
