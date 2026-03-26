@@ -6,7 +6,7 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
-## [Unreleased]
+## [1.0.1] — 2026-03-26
 
 ### Added
 - LDAPS support: `LdapUseSsl` and `LdapPort` options in `PasswordChangeOptions`
