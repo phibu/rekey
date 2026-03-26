@@ -1,8 +1,11 @@
-# PassCore V2
+# ReKey
 
-A self-service Active Directory password change portal. Built on **.NET 10 LTS** + **React 19** + **MUI 6** + **Vite**, targeting IIS on Windows Server 2022.
+**Self-service Active Directory password change portal.**
+Built on .NET 10 LTS · React 19 · MUI 6 · Vite · IIS on Windows Server 2022.
 
-PassCore V2 is a modernised fork of [Unosquare/passcore](https://github.com/unosquare/passcore), rebuilt from the ground up for current LTS stacks with hardened security, email notifications, and a clean modern UI.
+> Inspired by [PassCore](https://github.com/unosquare/passcore) by Unosquare LLC — fully rewritten on modern foundations with email notifications, password expiry reminders, HaveIBeenPwned integration, reCAPTCHA v3, and a clean contemporary UI.
+
+![ReKey UI](docs/screenshot.png)
 
 ---
 
@@ -10,19 +13,19 @@ PassCore V2 is a modernised fork of [Unosquare/passcore](https://github.com/unos
 
 | Feature | Details |
 |---|---|
-| AD password change | `System.DirectoryServices.AccountManagement` — domain-joined or explicit LDAP credentials |
-| Password strength meter | zxcvbn score, live feedback |
+| AD password change | `System.DirectoryServices.AccountManagement` — domain-joined or explicit LDAP |
+| Password strength meter | zxcvbn score with live visual feedback |
 | Password generator | Crypto-secure, configurable entropy |
 | Pwned password check | HaveIBeenPwned k-anonymity API |
-| reCAPTCHA v3 | Server-side score validation |
+| reCAPTCHA v3 | Server-side score validation (≥ 0.5) |
 | Password-changed email | MailKit, STARTTLS/SMTPS, Mimecast-compatible |
 | Expiry reminder emails | Daily background service, configurable threshold |
 | AD group allow/block lists | Restrict which users can self-serve |
 | Minimum password age | Enforces AD `minPwdAge` policy |
 | Must-change-at-next-logon | Clears `pwdLastSet` flag after successful change |
 | Rate limiting | Built-in ASP.NET Core fixed-window limiter |
-| Security headers | CSP, HSTS, X-Frame-Options, Referrer-Policy, etc. |
-| Debug provider | No AD needed for local dev/UI testing |
+| Security headers | CSP, HSTS, X-Frame-Options, Referrer-Policy, Permissions-Policy |
+| Debug provider | Full UI testing without an AD connection |
 
 ---
 
@@ -45,22 +48,25 @@ PassCore V2 is a modernised fork of [Unosquare/passcore](https://github.com/unos
 ## Project Structure
 
 ```
-PasscoreV2/
+rekey/
 ├── src/
-│   ├── PassCore.Common/             # Shared interfaces and error types
-│   ├── PassCore.PasswordProvider/   # AD password provider (Windows-only)
-│   └── PassCore.Web/                # ASP.NET Core app + React frontend
-│       ├── ClientApp/               # React 19 + Vite source
-│       ├── Controllers/             # API endpoints
-│       ├── Models/                  # Config and request models
-│       ├── Services/                # Email + background services
-│       ├── Helpers/                 # Debug/no-op providers
-│       ├── appsettings.json         # Default configuration
-│       └── Program.cs               # App entry point + DI wiring
-└── deploy/
-    ├── Publish-PassCore.ps1         # Build frontend + dotnet publish
-    ├── Install-PassCore.ps1         # IIS site/pool/cert/permissions setup
-    └── AD-ServiceAccount-Setup.md   # AD delegation guide
+│   ├── ReKey.Common/             # Shared interfaces and error types
+│   ├── ReKey.PasswordProvider/   # AD password provider (Windows-only)
+│   └── ReKey.Web/                # ASP.NET Core app + React frontend
+│       ├── ClientApp/            # React 19 + Vite source
+│       ├── Controllers/          # API endpoints
+│       ├── Models/               # Config and request models
+│       ├── Services/             # Email + background services
+│       ├── Helpers/              # Debug/no-op providers
+│       ├── appsettings.json      # Default configuration
+│       └── Program.cs            # App entry point + DI wiring
+├── deploy/
+│   ├── Publish-ReKey.ps1         # Build frontend + dotnet publish
+│   ├── Install-ReKey.ps1         # IIS site/pool/cert/permissions setup
+│   └── AD-ServiceAccount-Setup.md
+└── docs/
+    ├── IIS-Setup.md              # IIS prerequisites and certificate guide
+    └── screenshot.png            # UI preview
 ```
 
 ---
@@ -74,14 +80,14 @@ PasscoreV2/
 ### Run the backend
 
 ```bash
-cd src/PassCore.Web
+cd src/ReKey.Web
 dotnet run
 ```
 
 ### Run the frontend (hot-reload)
 
 ```bash
-cd src/PassCore.Web/ClientApp
+cd src/ReKey.Web/ClientApp
 npm install
 npm run dev
 ```
@@ -90,7 +96,7 @@ The Vite dev server proxies `/api` to `https://localhost:5001`.
 
 ### Debug mode (no AD required)
 
-Set `UseDebugProvider: true` in `src/PassCore.Web/appsettings.Development.json`:
+In `src/ReKey.Web/appsettings.Development.json`:
 
 ```json
 {
@@ -100,7 +106,7 @@ Set `UseDebugProvider: true` in `src/PassCore.Web/appsettings.Development.json`:
 }
 ```
 
-Use these test usernames to trigger specific error states:
+Use these usernames to exercise specific error states:
 
 | Username | Result |
 |---|---|
@@ -109,18 +115,16 @@ Use these test usernames to trigger specific error states:
 | `invalidCredentials` | Wrong current password |
 | `userNotFound` | User not found |
 | `changeNotPermitted` | Not allowed |
-| `pwnedPassword` | Pwned password error |
+| `pwnedPassword` | Pwned password |
 | `passwordTooYoung` | Too recently changed |
 
 ---
 
 ## Configuration
 
-All settings live in `appsettings.json` (defaults) and `appsettings.Production.json` (production overrides, never committed).
+Settings live in `appsettings.json` (defaults) and `appsettings.Production.json` (overrides, never committed).
 
-### Key sections
-
-#### `PasswordChangeOptions`
+### `PasswordChangeOptions`
 ```json
 {
   "PasswordChangeOptions": {
@@ -140,76 +144,46 @@ All settings live in `appsettings.json` (defaults) and `appsettings.Production.j
 ```
 
 - `UseAutomaticContext: true` — domain-joined server, no credentials needed
-- `UseAutomaticContext: false` — supply `LdapHostnames` / `LdapUsername` / `LdapPassword`
-- `AllowedAdGroups: []` (empty) — all users permitted
-- `RestrictedAdGroups` — block list takes priority over allow list
+- `AllowedAdGroups: []` (empty) — all users permitted; add groups to restrict access
+- Block list takes priority over allow list
 
-#### `SmtpSettings`
+### `SmtpSettings`
 ```json
 {
   "SmtpSettings": {
     "Host": "smtp-relay.yourdomain.com",
     "Port": 587,
     "UseSsl": true,
-    "Username": "",
-    "Password": "",
-    "FromAddress": "passcore@yourdomain.com",
-    "FromName": "PassCore Self-Service"
+    "FromAddress": "rekey@yourdomain.com",
+    "FromName": "ReKey Self-Service"
   }
 }
 ```
 
-Port `587` = STARTTLS. Port `465` = SMTPS. Leave `Host` empty to disable email.
-
-#### `ClientSettings`
-Controls all UI strings, feature flags, and reCAPTCHA keys.
-The full structure is served to the frontend via `GET /api/password`.
+Port `587` = STARTTLS · Port `465` = SMTPS · Leave `Host` empty to disable email.
 
 ---
 
 ## Deployment
 
-### 1. Publish
+See [`docs/IIS-Setup.md`](docs/IIS-Setup.md) for the full step-by-step guide including certificate setup.
+
+### Quick deploy
 
 ```powershell
-# From repo root
-.\deploy\Publish-PassCore.ps1
-```
+# 1. Build
+.\deploy\Publish-ReKey.ps1
 
-This builds the React frontend and runs `dotnet publish` into `deploy\publish\`.
-
-### 2. Install to IIS
-
-```powershell
-# Minimal (ApplicationPoolIdentity, configure HTTPS manually)
-.\deploy\Install-PassCore.ps1
-
-# With service account and certificate
-.\deploy\Install-PassCore.ps1 `
-    -AppPoolIdentity "CORP\svc-passcore" `
+# 2. Install to IIS (run as Administrator)
+.\deploy\Install-ReKey.ps1 `
+    -AppPoolIdentity "CORP\svc-rekey" `
     -AppPoolPassword "S3cr3t!" `
     -CertThumbprint "A1B2C3D4..."
+
+# 3. Edit C:\inetpub\ReKey\appsettings.Production.json
 ```
 
-The installer:
-- Verifies .NET 10 Hosting Bundle and required IIS features
-- Creates/updates app pool (No Managed Code, AlwaysRunning)
-- Copies files with robocopy
-- Sets NTFS permissions
-- Configures HTTPS binding if a cert thumbprint is supplied
-- Writes a starter `appsettings.Production.json`
-
-### 3. Configure
-
-Edit `C:\inetpub\PassCore\appsettings.Production.json` — fill in:
-- `DefaultDomain`
-- `SmtpSettings.Host`
-- `Recaptcha.SiteKey` + `Recaptcha.PrivateKey`
-- Set `UseDebugProvider: false`
-
-### AD Service Account
-
-See [`deploy/AD-ServiceAccount-Setup.md`](deploy/AD-ServiceAccount-Setup.md) for step-by-step instructions on creating the service account and delegating the required AD permissions.
+For AD service account delegation, see [`deploy/AD-ServiceAccount-Setup.md`](deploy/AD-ServiceAccount-Setup.md).
 
 ---
 
@@ -218,35 +192,14 @@ See [`deploy/AD-ServiceAccount-Setup.md`](deploy/AD-ServiceAccount-Setup.md) for
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/api/password` | Returns `ClientSettings` for UI initialisation |
-| `POST` | `/api/password` | Submit password change request |
-| `GET` | `/health` | Health check endpoint |
-
-### POST /api/password
-
-Request:
-```json
-{
-  "username": "user@yourdomain.com",
-  "currentPassword": "OldP@ss1",
-  "newPassword": "NewP@ss2",
-  "newPasswordVerify": "NewP@ss2",
-  "recaptcha": "<token>"
-}
-```
-
-Success `200`:
-```json
-{ "payload": "Password changed successfully.", "errors": [] }
-```
-
-Error `400`:
-```json
-{ "errors": [{ "errorCode": 4, "message": "..." }] }
-```
+| `POST` | `/api/password` | Submit password change |
+| `GET` | `/health` | Health check |
 
 ---
 
 ## License
 
-MIT — © 2016–2022 Unosquare LLC. PassCore V2 modifications © 2024–2025.
-See [passcore/LICENSE](passcore/LICENSE) for the original licence text.
+MIT — © 2024–2025 Philippe Buschmann.
+
+Inspired by [PassCore](https://github.com/unosquare/passcore) © 2016–2022 Unosquare LLC (MIT).
+See [LICENSE](LICENSE) for full text and attribution.

@@ -1,0 +1,29 @@
+{
+  "name": "passcore-web",
+  "private": true,
+  "version": "2.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@mui/icons-material": "^6.4.8",
+    "@mui/material": "^6.4.8",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zxcvbn": "^4.4.2"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@types/zxcvbn": "^4.4.4",
+    "@vitejs/plugin-react": "^4.4.1",
+    "playwright": "^1.58.2",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.1"
+  }
+}
