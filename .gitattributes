@@ -1,0 +1,20 @@
+# Normalise all text files to LF in the repository
+* text=auto eol=lf
+
+# Shell scripts and CI — must be LF or bash misreads the shebang
+.githooks/commit-msg     text eol=lf
+.github/workflows/*.yml  text eol=lf
+
+# PowerShell — CRLF is idiomatic on Windows
+deploy/*.ps1             text eol=crlf
+
+# Binary files — never alter line endings
+*.png                    binary
+*.jpg                    binary
+*.ico                    binary
+*.zip                    binary
+*.dll                    binary
+*.exe                    binary
+*.pdb                    binary
+*.pfx                    binary
+*.p12                    binary
