@@ -18,6 +18,7 @@ public sealed class PasswordController : ControllerBase
 {
     private readonly IPasswordChangeProvider _provider;
     private readonly IEmailService _emailService;
+    private readonly ISiemService _siemService;
     private readonly IOptions<ClientSettings> _clientSettings;
     private readonly IOptions<EmailNotificationSettings> _emailNotifSettings;
     private readonly ILogger<PasswordController> _logger;
@@ -32,12 +33,14 @@ public sealed class PasswordController : ControllerBase
     public PasswordController(
         IPasswordChangeProvider provider,
         IEmailService emailService,
+        ISiemService siemService,
         IOptions<ClientSettings> clientSettings,
         IOptions<EmailNotificationSettings> emailNotifSettings,
         ILogger<PasswordController> logger)
     {
         _provider           = provider;
         _emailService       = emailService;
+        _siemService        = siemService;
         _clientSettings     = clientSettings;
         _emailNotifSettings = emailNotifSettings;
         _logger             = logger;
@@ -66,7 +69,7 @@ public sealed class PasswordController : ControllerBase
 
         if (!ModelState.IsValid)
         {
-            AuditLog("ValidationFailed", model.Username, clientIp);
+            Audit("ValidationFailed", model.Username, clientIp, SiemEventType.ValidationFailed);
             return BadRequest(ApiResult.FromModelStateErrors(ModelState));
         }
 
@@ -76,7 +79,7 @@ public sealed class PasswordController : ControllerBase
         if (settings.MinimumDistance > 0 &&
             _provider.MeasureNewPasswordDistance(model.CurrentPassword, model.NewPassword) < settings.MinimumDistance)
         {
-            AuditLog("DistanceTooLow", model.Username, clientIp);
+            Audit("DistanceTooLow", model.Username, clientIp);
             var result = new ApiResult();
             result.Errors.Add(new ApiErrorItem(ApiErrorCode.MinimumDistance));
             return BadRequest(result);
@@ -88,7 +91,7 @@ public sealed class PasswordController : ControllerBase
         {
             if (!await ValidateRecaptchaAsync(model.Recaptcha, recaptchaConfig.PrivateKey, clientIp))
             {
-                AuditLog("RecaptchaFailed", model.Username, clientIp);
+                Audit("RecaptchaFailed", model.Username, clientIp, SiemEventType.RecaptchaFailed);
                 return BadRequest(ApiResult.InvalidCaptcha());
             }
         }
@@ -98,13 +101,14 @@ public sealed class PasswordController : ControllerBase
 
         if (error is not null)
         {
-            AuditLog($"Failed:{error.ErrorCode}", model.Username, clientIp);
+            var siemType = MapErrorCodeToSiemEvent(error.ErrorCode);
+            Audit($"Failed:{error.ErrorCode}", model.Username, clientIp, siemType, error.Message);
             var result = new ApiResult();
             result.Errors.Add(error);
             return BadRequest(result);
         }
 
-        AuditLog("Success", model.Username, clientIp);
+        Audit("Success", model.Username, clientIp, SiemEventType.PasswordChanged);
 
         // Fire-and-forget email notification — capture HttpContext values before Task.Run
         if (_emailNotifSettings.Value.Enabled)
@@ -134,10 +138,26 @@ public sealed class PasswordController : ControllerBase
 
     // ─── Private helpers ──────────────────────────────────────────────────────
 
-    private void AuditLog(string outcome, string username, string clientIp) =>
+    private void Audit(string outcome, string username, string clientIp,
+        SiemEventType? siemEvent = null, string? detail = null)
+    {
         _logger.LogInformation(
             "PasswordChange outcome={Outcome} user={User} ip={Ip}",
             outcome, username, clientIp);
+
+        if (siemEvent.HasValue)
+            _siemService.LogEvent(siemEvent.Value, username, clientIp, detail);
+    }
+
+    private static SiemEventType MapErrorCodeToSiemEvent(ApiErrorCode code) => code switch
+    {
+        ApiErrorCode.InvalidCredentials  => SiemEventType.InvalidCredentials,
+        ApiErrorCode.UserNotFound        => SiemEventType.UserNotFound,
+        ApiErrorCode.PortalLockout       => SiemEventType.PortalLockout,
+        ApiErrorCode.ApproachingLockout  => SiemEventType.ApproachingLockout,
+        ApiErrorCode.ChangeNotPermitted  => SiemEventType.ChangeNotPermitted,
+        _                                => SiemEventType.Generic,
+    };
 
     private static async Task<bool> ValidateRecaptchaAsync(
         string token, string privateKey, string clientIp)

@@ -22,6 +22,8 @@ builder.Services.Configure<EmailNotificationSettings>(
     builder.Configuration.GetSection(nameof(EmailNotificationSettings)));
 builder.Services.Configure<PasswordExpiryNotificationSettings>(
     builder.Configuration.GetSection(nameof(PasswordExpiryNotificationSettings)));
+builder.Services.Configure<SiemSettings>(
+    builder.Configuration.GetSection(nameof(SiemSettings)));
 builder.Services.Configure<PasswordChangeOptions>(
     builder.Configuration.GetSection(nameof(PasswordChangeOptions)));
 builder.Services.AddSingleton<IValidateOptions<PasswordChangeOptions>, PasswordChangeOptionsValidator>();
@@ -59,6 +61,9 @@ else
         builder.Services.AddHostedService<PasswordExpiryNotificationService>();
 }
 
+// ─── SIEM service ─────────────────────────────────────────────────────────────
+builder.Services.AddSingleton<ISiemService, SiemService>();
+
 // ─── Rate limiting (built-in .NET 7+ API, no third-party dependency) ──────────
 // Policy name used by the [EnableRateLimiting] attribute on PasswordController.
 const string PasswordRateLimitPolicy = "password-fixed-window";
@@ -66,6 +71,14 @@ const string PasswordRateLimitPolicy = "password-fixed-window";
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.OnRejected = (context, _) =>
+    {
+        var siem = context.HttpContext.RequestServices.GetService<ISiemService>();
+        var ip   = context.HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        siem?.LogEvent(SiemEventType.RateLimitExceeded, "unknown", ip);
+        return ValueTask.CompletedTask;
+    };
 
     options.AddFixedWindowLimiter(PasswordRateLimitPolicy, limiterOptions =>
     {
