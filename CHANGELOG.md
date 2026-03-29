@@ -6,6 +6,53 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.1.0] — 2026-03-29
+
+### Added
+- **Async provider chain**: `IPasswordChangeProvider.PerformPasswordChange` is now `PerformPasswordChangeAsync`. The HIBP breach check uses async `HttpClient.GetAsync` instead of blocking `Send`, eliminating thread pool pressure under concurrent load.
+- **React Error Boundary**: unhandled React rendering errors now show a user-friendly fallback with a reload button instead of a white screen.
+- **Dark mode**: automatic light/dark theme switching via `prefers-color-scheme` media query detection.
+- **ESLint + Prettier**: frontend linting and formatting with `npm run lint` and `npm run format:check` scripts.
+- **Loading skeleton**: replaced the spinner-only loading state with skeleton placeholders that preserve layout and minimise CLS.
+- **`aria-live` region**: screen readers now announce dynamic error messages and lockout warnings.
+- **SPA fallback route**: `MapFallbackToFile("index.html")` ensures direct navigation to non-root paths serves the app.
+- **Multi-DC health check**: `GET /api/health` now probes all configured LDAP hostnames (not just the first) and returns 503 with per-check details when AD is unreachable.
+- **`FailOpenOnPwnedCheckUnavailable`** config option: when `true`, HIBP API outages skip the breach check with a warning log instead of blocking all password changes (default: `false`).
+- **`AllowSetPasswordFallback`** config option: opt-in for the administrative `SetPassword` fallback on COMException (default: `false`; bypasses AD password history when enabled).
+- **`SECURITY.md`**: responsible disclosure policy with scope, response timeline, and security architecture summary.
+- **`docs/Known-Limitations.md`**: 15 documented constraints covering platform, deployment, authentication, password policy, networking, monitoring, and frontend.
+- **`docs/Secret-Management.md`**: expanded with IIS environment variable PowerShell commands, credential rotation procedure, and file permission verification.
+
+### Changed
+- **Primary color**: teal darkened from `#0d7377` to `#0b6366` for WCAG AA contrast compliance (~4.7:1 on white).
+- **NuGet packages**: updated `Microsoft.Extensions.Logging.Abstractions`, `Microsoft.Extensions.Options`, `System.DirectoryServices`, and `System.DirectoryServices.AccountManagement` from preview/9.0.0 to stable 10.0.5.
+- **Inter font**: weight 700 now loaded from Google Fonts (used by the product name header).
+
+### Fixed
+- **Rate limiter**: converted from a global bucket (all users shared 5 req/5 min) to per-IP partitioned policy using `RateLimitPartition.GetFixedWindowLimiter`.
+- **Lockout dictionary memory leak**: added `Timer`-based eviction of expired entries every 5 minutes; `LockoutPasswordChangeProvider` now implements `IDisposable`.
+- **`SetPassword` fallback**: now opt-in via `AllowSetPasswordFallback` (was unconditional when `UseAutomaticContext=false`). Prevents accidental bypass of AD password history enforcement.
+- **Non-JSON error handling**: `changePassword()` client now checks `Content-Type` header before calling `res.json()`, preventing crashes on HTML error pages (502, proxy errors).
+- **CSP hardening**: added `base-uri 'self'`, `form-action 'self'`, `object-src 'none'` directives.
+- **Request size limit**: added `[RequestSizeLimit(8192)]` on the POST endpoint (was unbounded at 30MB default).
+- **Model validation**: added `[MaxLength(256)]` on `NewPasswordVerify` and `[MaxLength(2048)]` on `Recaptcha` field.
+- **Syslog injection**: `EscapeSd()` now strips control characters (U+0000–U+001F, U+007F) in addition to escaping RFC 5424 special characters.
+- **reCAPTCHA logging**: validation exceptions now logged at Warning level instead of silently swallowed.
+- **DNS refresh**: static `HttpClient` instances for HIBP and reCAPTCHA now use `SocketsHttpHandler` with `PooledConnectionLifetime` (10 min).
+- **`document.title`**: moved from render body to `useEffect` to fix React StrictMode side effect.
+- **Password generator**: replaced modulo bias with rejection sampling for uniform random index.
+- **Syslog connections**: TCP/UDP clients now pooled with lazy init and reconnect instead of creating a new connection per event.
+- **Health endpoint**: removed version info to limit fingerprinting; added AD connectivity probing.
+- **`fetchSettings`**: now checks `Content-Type` header before parsing JSON.
+
+### Docs
+- Updated `CLAUDE.md` to reflect all architectural changes (async interface, new config keys, SIEM section, health endpoint section).
+- Fixed health endpoint path in `README.MD` and `IIS-Setup.md` (`/health` → `/api/health`).
+- Added Security section and Known Limitations link to `README.MD`.
+- Added new docs to project structure in `README.MD`.
+
+---
+
 ## [1.0.5] — 2026-03-28
 
 ### Added

@@ -265,7 +265,7 @@ Before going live, enable the debug provider to verify IIS is serving the app co
 
 ```powershell
 # Health check (run from any machine with network access)
-Invoke-WebRequest https://passreset.yourdomain.com/health -UseBasicParsing
+Invoke-WebRequest https://passreset.yourdomain.com/api/health -UseBasicParsing
 
 # Expected: StatusCode 200, Content: Healthy
 ```
