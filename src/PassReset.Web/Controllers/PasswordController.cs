@@ -102,7 +102,7 @@ public sealed class PasswordController : ControllerBase
         }
 
         // Perform the password change
-        var error = _provider.PerformPasswordChange(model.Username, model.CurrentPassword, model.NewPassword);
+        var error = await _provider.PerformPasswordChangeAsync(model.Username, model.CurrentPassword, model.NewPassword);
 
         if (error is not null)
         {

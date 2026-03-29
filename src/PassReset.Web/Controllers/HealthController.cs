@@ -61,22 +61,26 @@ public sealed class HealthController : ControllerBase
             }
         }
 
-        // When using explicit credentials, verify the LDAP endpoint is reachable.
-        if (opts.LdapHostnames.Length == 0 || string.IsNullOrWhiteSpace(opts.LdapHostnames[0]))
+        // When using explicit credentials, verify at least one LDAP endpoint is reachable.
+        var hostnames = opts.LdapHostnames.Where(h => !string.IsNullOrWhiteSpace(h)).ToArray();
+        if (hostnames.Length == 0)
             return true; // No LDAP configured — skip check (debug provider scenario)
 
-        try
+        foreach (var host in hostnames)
         {
-            var host = opts.LdapHostnames[0];
-            using var client = new System.Net.Sockets.TcpClient();
-            client.Connect(host, opts.LdapPort);
-            return true;
+            try
+            {
+                using var client = new System.Net.Sockets.TcpClient();
+                client.Connect(host, opts.LdapPort);
+                return true; // At least one DC is reachable
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "AD health check failed for LDAP endpoint {Host}:{Port}", host, opts.LdapPort);
+            }
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "AD health check failed (LDAP endpoint {Host}:{Port})",
-                opts.LdapHostnames[0], opts.LdapPort);
-            return false;
-        }
+
+        _logger.LogError("AD health check failed — no LDAP endpoints reachable ({Hosts})", string.Join(", ", hostnames));
+        return false;
     }
 }

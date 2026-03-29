@@ -12,7 +12,7 @@ public interface IPasswordChangeProvider
     /// <param name="currentPassword">The current password.</param>
     /// <param name="newPassword">The new password.</param>
     /// <returns>The API error item or null if the change password operation was successful.</returns>
-    ApiErrorItem? PerformPasswordChange(string username, string currentPassword, string newPassword);
+    Task<ApiErrorItem?> PerformPasswordChangeAsync(string username, string currentPassword, string newPassword);
 
     /// <summary>
     /// Retrieves the email address for the specified user from the directory.

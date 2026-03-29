@@ -28,7 +28,7 @@ public sealed class PasswordChangeProvider : IPasswordChangeProvider
     }
 
     /// <inheritdoc />
-    public ApiErrorItem? PerformPasswordChange(string username, string currentPassword, string newPassword)
+    public async Task<ApiErrorItem?> PerformPasswordChangeAsync(string username, string currentPassword, string newPassword)
     {
         try
         {
@@ -49,8 +49,8 @@ public sealed class PasswordChangeProvider : IPasswordChangeProvider
                 return new ApiErrorItem(ApiErrorCode.ComplexPassword);
             }
 
-            // Reject passwords found in public breach databases
-            var pwnedResult = PwnedPasswordChecker.IsPwnedPassword(newPassword);
+            // Reject passwords found in public breach databases (async — does not block a thread pool thread)
+            var pwnedResult = await PwnedPasswordChecker.IsPwnedPasswordAsync(newPassword).ConfigureAwait(false);
             if (pwnedResult == true)
             {
                 _logger.LogError("New password for {Username} is publicly known (HaveIBeenPwned)", username);

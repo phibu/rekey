@@ -17,7 +17,7 @@ internal sealed class DebugPasswordChangeProvider : IPasswordChangeProvider
         _logger = logger;
     }
 
-    public ApiErrorItem? PerformPasswordChange(string username, string currentPassword, string newPassword)
+    public Task<ApiErrorItem?> PerformPasswordChangeAsync(string username, string currentPassword, string newPassword)
     {
         var localPart = username.Contains('@')
             ? username[..username.IndexOf('@')]
@@ -25,7 +25,7 @@ internal sealed class DebugPasswordChangeProvider : IPasswordChangeProvider
 
         _logger.LogDebug("DebugPasswordChangeProvider: PerformPasswordChange called for user={User}", localPart);
 
-        return localPart switch
+        ApiErrorItem? result = localPart switch
         {
             "error"             => new ApiErrorItem(ApiErrorCode.Generic, "Simulated generic error"),
             "changeNotPermitted"=> new ApiErrorItem(ApiErrorCode.ChangeNotPermitted),
@@ -40,6 +40,7 @@ internal sealed class DebugPasswordChangeProvider : IPasswordChangeProvider
             "passwordTooYoung"  => new ApiErrorItem(ApiErrorCode.PasswordTooYoung),
             _                   => null   // success
         };
+        return Task.FromResult(result);
     }
 
     public string? GetUserEmail(string username) =>

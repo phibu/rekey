@@ -67,7 +67,7 @@ public sealed class LockoutPasswordChangeProvider : IPasswordChangeProvider, IDi
     public void Dispose() => _cleanupTimer.Dispose();
 
     /// <inheritdoc />
-    public ApiErrorItem? PerformPasswordChange(string username, string currentPassword, string newPassword)
+    public async Task<ApiErrorItem?> PerformPasswordChangeAsync(string username, string currentPassword, string newPassword)
     {
         var threshold = _options.PortalLockoutThreshold;
 
@@ -88,7 +88,7 @@ public sealed class LockoutPasswordChangeProvider : IPasswordChangeProvider, IDi
             }
         }
 
-        var result = _inner.PerformPasswordChange(username, currentPassword, newPassword);
+        var result = await _inner.PerformPasswordChangeAsync(username, currentPassword, newPassword);
 
         if (threshold > 0)
         {
