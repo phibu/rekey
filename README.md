@@ -122,6 +122,8 @@ docs/
   IIS-Setup.md                — step-by-step IIS and certificate guide
   AD-ServiceAccount-Setup.md  — Active Directory permissions guide
   appsettings-Production.md   — full configuration reference
+  Secret-Management.md        — credential handling and hardening options
+  Known-Limitations.md        — documented constraints and trade-offs
 ```
 
 ---
@@ -176,7 +178,25 @@ AD-Passreset-Portal exposes a minimal REST API for the self‑service password�
 |---|---|---|
 | `GET` | `/api/password` | Returns UI settings (labels, feature flags, validation rules) |
 | `POST` | `/api/password` | Submit a password change |
-| `GET` | `/health` | Health check |
+| `GET` | `/api/health` | Health check (returns 200 healthy / 503 degraded with AD connectivity status) |
+
+---
+
+## Security
+
+PassReset is designed for handling Active Directory credentials securely:
+
+- HTTPS enforced with HSTS (1-year max-age)
+- Comprehensive CSP, X-Frame-Options DENY, nosniff, Referrer-Policy
+- Per-IP rate limiting (5 req / 5 min) + per-username portal lockout
+- HaveIBeenPwned breach check via k-anonymity (password never leaves the server)
+- reCAPTCHA v3 bot protection (optional)
+- Privileged AD groups blocked by default
+- Passwords never logged, stored, or returned in API responses
+- SIEM integration for all security events
+
+For vulnerability reporting, see [`SECURITY.md`](SECURITY.md).
+Known constraints and trade-offs: [`docs/Known-Limitations.md`](docs/Known-Limitations.md).
 
 ---
 
