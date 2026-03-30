@@ -42,6 +42,7 @@ secrets.json
 Todo.MD
 
 # ── Local tooling / IDE metadata ─────────────────────────────────────────────
+CLAUDE.md
 .claude/
 .bg-shell/
 .gsd/
