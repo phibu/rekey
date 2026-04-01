@@ -17,6 +17,11 @@ internal sealed class PasswordExpiryNotificationService : BackgroundService
     // Tracks (username, date) pairs that have already been notified today to avoid duplicates.
     private readonly HashSet<(string Username, DateOnly Date)> _notifiedToday = [];
 
+    /// <summary>
+    /// Limits concurrent AD group enumeration queries to prevent domain controller overload.
+    /// </summary>
+    private static readonly SemaphoreSlim _groupQueryThrottle = new(5, 5);
+
     public PasswordExpiryNotificationService(
         IServiceProvider services,
         IOptions<PasswordExpiryNotificationSettings> notifSettings,
@@ -65,13 +70,15 @@ internal sealed class PasswordExpiryNotificationService : BackgroundService
             var threshold = TimeSpan.FromDays(_notifSettings.DaysBeforeExpiry);
             var today     = DateOnly.FromDateTime(DateTime.UtcNow);
 
-            // Collect users from all allowed groups (deduplicated by username)
+            // Parallel group enumeration for notification groups
             var seenUsernames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var groups = passwordOptions.AllowedAdGroups ?? [];
+            var notifyTasks = (passwordOptions.AllowedAdGroups ?? [])
+                .Select(g => GetGroupUsersThrottledAsync(provider, g, ct));
+            var notifyResults = await Task.WhenAll(notifyTasks);
 
-            foreach (var group in groups)
+            foreach (var users in notifyResults)
             {
-                foreach (var (username, email, lastSet) in provider.GetUsersInGroup(group))
+                foreach (var (username, email, lastSet) in users)
                 {
                     if (!seenUsernames.Add(username)) continue;
                     if (_notifiedToday.Contains((username, today))) continue;
@@ -86,11 +93,9 @@ internal sealed class PasswordExpiryNotificationService : BackgroundService
                     var expiryDate     = DateTime.UtcNow.Add(remaining).ToString("yyyy-MM-dd");
                     var daysRemaining  = Math.Max(0, (int)Math.Ceiling(remaining.TotalDays));
 
-                    var body = _notifSettings.ExpiryEmailBodyTemplate
-                        .Replace("{Username}",      username,      StringComparison.Ordinal)
-                        .Replace("{DaysRemaining}", daysRemaining.ToString(), StringComparison.Ordinal)
-                        .Replace("{ExpiryDate}",    expiryDate,    StringComparison.Ordinal)
-                        .Replace("{PassResetUrl}",   _notifSettings.PassResetUrl, StringComparison.Ordinal);
+                    var body = ApplyTokens(
+                        _notifSettings.ExpiryEmailBodyTemplate,
+                        username, daysRemaining, expiryDate);
 
                     await emailService.SendAsync(email, username, _notifSettings.ExpiryEmailSubject, body);
                     _notifiedToday.Add((username, today));
@@ -126,5 +131,40 @@ internal sealed class PasswordExpiryNotificationService : BackgroundService
         var delay = next - now;
 
         return delay < TimeSpan.FromMinutes(1) ? TimeSpan.FromMinutes(1) : delay;
+    }
+
+    /// <summary>
+    /// Replaces template tokens with runtime values.
+    /// </summary>
+    /// <remarks>
+    /// Uses String.Replace with exact token names ({Username}, {DaysRemaining}, {ExpiryDate}, {PassResetUrl}).
+    /// AD SAM account names cannot contain '{' or '}' per Active Directory naming rules,
+    /// so incomplete token replacement from brace characters in usernames is not a practical risk.
+    /// If templates become user-configurable in a future version, consider a proper template engine.
+    /// </remarks>
+    private string ApplyTokens(string template, string username, int daysRemaining, string expiryDate) =>
+        template
+            .Replace("{Username}",      username,                    StringComparison.Ordinal)
+            .Replace("{DaysRemaining}", daysRemaining.ToString(),    StringComparison.Ordinal)
+            .Replace("{ExpiryDate}",    expiryDate,                  StringComparison.Ordinal)
+            .Replace("{PassResetUrl}",  _notifSettings.PassResetUrl, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Queries group membership with semaphore-throttled concurrency.
+    /// Wraps the synchronous <see cref="IPasswordChangeProvider.GetUsersInGroup"/>
+    /// in Task.Run to avoid blocking the hosted service thread pool.
+    /// </summary>
+    private async Task<IReadOnlyList<(string Username, string Email, DateTime? PasswordLastSet)>>
+        GetGroupUsersThrottledAsync(IPasswordChangeProvider provider, string groupName, CancellationToken ct)
+    {
+        await _groupQueryThrottle.WaitAsync(ct);
+        try
+        {
+            return await Task.Run(() => provider.GetUsersInGroup(groupName).ToList(), ct);
+        }
+        finally
+        {
+            _groupQueryThrottle.Release();
+        }
     }
 }
