@@ -41,6 +41,56 @@ if (-not $Version) {
     if (-not $Version) { $Version = 'dev' }
 }
 
+# Strip 'v' prefix for MSBuild /p:Version (semver only, e.g. 1.2.0)
+$semver = if ($Version -match '^v?(\d+\.\d+\.\d+.*)$') { $Matches[1] } else { '0.0.0-dev' }
+
+# ── Validate production template against appsettings.json ────────────────
+# Ensures every config key in appsettings.json exists in the production
+# template. Fails the build if keys are missing — no more forgotten config.
+
+$templatePath   = Join-Path $PSScriptRoot 'appsettings.Production.template.json'
+$appSettingsPath = Join-Path $repoRoot 'src\PassReset.Web\appsettings.json'
+
+function Get-JsonKeyPaths {
+    param([PSCustomObject] $Obj, [string] $Prefix = '')
+    $paths = @()
+    foreach ($prop in $Obj.PSObject.Properties) {
+        $key = if ($Prefix) { "$Prefix`:$($prop.Name)" } else { $prop.Name }
+        if ($prop.Value -is [PSCustomObject]) {
+            $paths += Get-JsonKeyPaths $prop.Value $key
+        } else {
+            $paths += $key
+        }
+    }
+    return $paths
+}
+
+Write-Host "`n[>>] Validating production config template..." -ForegroundColor Cyan
+
+$templateJson   = Get-Content $templatePath -Raw | ConvertFrom-Json
+# Strip // comments from appsettings.json (JSONC → JSON)
+$appSettingsRaw = (Get-Content $appSettingsPath -Raw) -replace '(?m)^\s*//.*$', ''
+$appSettingsJson = $appSettingsRaw | ConvertFrom-Json
+
+# Ignore keys that are not user-configurable (Logging, AllowedHosts)
+$ignoreSections = @('Logging', 'AllowedHosts')
+
+$sourceKeys   = Get-JsonKeyPaths $appSettingsJson | Where-Object {
+    $section = ($_ -split ':')[0]
+    $section -notin $ignoreSections
+}
+$templateKeys = Get-JsonKeyPaths $templateJson
+
+$missing = $sourceKeys | Where-Object { $_ -notin $templateKeys }
+
+if ($missing) {
+    Write-Host "`n  [ERR] Production template is missing these config keys:" -ForegroundColor Red
+    $missing | ForEach-Object { Write-Host "        - $_" -ForegroundColor Red }
+    Write-Host "`n  Update deploy\appsettings.Production.template.json and retry.`n" -ForegroundColor Red
+    exit 1
+}
+Write-Host "  [OK] Production template covers all config keys" -ForegroundColor Green
+
 # ── Frontend ──────────────────────────────────────────────────────────────────
 Write-Host "`n[>>] Building React frontend..." -ForegroundColor Cyan
 Push-Location $clientApp
@@ -58,7 +108,8 @@ dotnet publish "$repoRoot\src\PassReset.Web\PassReset.Web.csproj" `
     --configuration $Configuration `
     --runtime win-x64 `
     --self-contained false `
-    --output $publishOut
+    --output $publishOut `
+    /p:Version=$semver
 Write-Host "  [OK] Published to $publishOut" -ForegroundColor Green
 
 # ── Package release zip ───────────────────────────────────────────────────────
@@ -80,6 +131,8 @@ New-Item -ItemType Directory -Path $stagingPublish | Out-Null
 Copy-Item "$PSScriptRoot\Install-PassReset.ps1"   -Destination $stagingDir
 Copy-Item "$PSScriptRoot\Uninstall-PassReset.ps1" -Destination $stagingDir
 Copy-Item "$publishOut\*" -Destination $stagingPublish -Recurse
+# Ship the production template alongside the app so the installer can find it
+Copy-Item $templatePath -Destination $stagingPublish
 
 try {
     Compress-Archive -Path "$stagingDir\*" -DestinationPath $zipPath -CompressionLevel Optimal

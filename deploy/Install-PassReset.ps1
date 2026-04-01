@@ -44,6 +44,19 @@
     Password for AppPoolIdentity service account as a SecureString. Only used when AppPoolIdentity is set.
     Pass via: -AppPoolPassword (Read-Host 'App pool password' -AsSecureString)
 
+.PARAMETER LdapPassword
+    LDAP bind password as a SecureString. Stored as an IIS app pool environment variable
+    (PasswordChangeOptions__LdapPassword) so it never touches appsettings.Production.json.
+    Skipped when UseAutomaticContext is true (domain-joined servers).
+
+.PARAMETER SmtpPassword
+    SMTP relay password as a SecureString. Stored as an IIS app pool environment variable
+    (SmtpSettings__Password). Leave empty if the relay allows anonymous submission.
+
+.PARAMETER RecaptchaPrivateKey
+    reCAPTCHA v3 secret key as a SecureString. Stored as an IIS app pool environment variable
+    (ClientSettings__Recaptcha__PrivateKey). Leave empty if reCAPTCHA is disabled.
+
 .PARAMETER Force
     Skip the interactive upgrade confirmation prompt when an existing installation is detected.
     Use this for unattended / CI deployments.
@@ -53,11 +66,13 @@
     .\Install-PassReset.ps1
 
 .EXAMPLE
-    # Full — service account + certificate:
+    # Full — service account + certificate + secrets as environment variables:
     .\Install-PassReset.ps1 `
         -AppPoolIdentity "CORP\svc-passreset" `
         -AppPoolPassword (Read-Host 'App pool password' -AsSecureString) `
-        -CertThumbprint "A1B2C3D4E5F6..."
+        -CertThumbprint  "A1B2C3D4E5F6..." `
+        -LdapPassword    (Read-Host 'LDAP password' -AsSecureString) `
+        -SmtpPassword    (Read-Host 'SMTP password' -AsSecureString)
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -70,6 +85,10 @@ param(
     [string] $CertThumbprint  = '',
     [string]       $AppPoolIdentity = '',
     [SecureString] $AppPoolPassword = $null,
+
+    [SecureString] $LdapPassword        = $null,
+    [SecureString] $SmtpPassword        = $null,
+    [SecureString] $RecaptchaPrivateKey  = $null,
 
     [switch] $Force
 )
@@ -175,9 +194,9 @@ $siteExists = Test-Path "IIS:\Sites\$SiteName"
 if ($siteExists) {
     $deployedExe     = Join-Path $PhysicalPath 'PassReset.Web.exe'
     $currentVersion  = if (Test-Path $deployedExe) {
-                           (Get-Item $deployedExe).VersionInfo.ProductVersion
+                           (Get-Item $deployedExe).VersionInfo.FileVersion -replace '\.0$'
                        } else { 'unknown' }
-    $incomingVersion = (Get-Item $webExe).VersionInfo.ProductVersion
+    $incomingVersion = (Get-Item $webExe).VersionInfo.FileVersion -replace '\.0$'
 
     Write-Host ''
     Write-Host '  [!!] Existing PassReset installation detected.' -ForegroundColor Yellow
@@ -367,137 +386,76 @@ $prodConfig = Join-Path $PhysicalPath 'appsettings.Production.json'
 if (Test-Path $prodConfig) {
     Write-Warn "appsettings.Production.json already exists — not overwriting. Edit it manually."
 } else {
-    $config = [PSCustomObject]@{
-        WebSettings = [PSCustomObject]@{
-            EnableHttpsRedirect = $true
-            UseDebugProvider    = $false
-        }
-        PasswordChangeOptions = [PSCustomObject]@{
-            UseAutomaticContext         = $true
-            AllowedUsernameAttributes   = @('samaccountname')
-            IdTypeForUser               = 'UserPrincipalName'
-            PortalLockoutThreshold      = 3
-            PortalLockoutWindow         = '00:30:00'
-            DefaultDomain               = 'yourdomain.com'
-            ClearMustChangePasswordFlag = $true
-            EnforceMinimumPasswordAge   = $true
-            UpdateLastPassword          = $false
-            RestrictedAdGroups          = @('Domain Admins', 'Enterprise Admins', 'Schema Admins', 'Administrators')
-            AllowedAdGroups             = @()
-            LdapHostnames               = @('')
-            LdapPort                    = 636
-            LdapUseSsl                  = $true
-            LdapUsername                = ''
-            LdapPassword                = ''
-            NotificationEmailStrategy   = 'Mail'
-            NotificationEmailDomain     = ''
-            NotificationEmailTemplate   = ''
-        }
-        SmtpSettings = [PSCustomObject]@{
-            Host        = 'smtp-relay.yourdomain.com'
-            Port        = 587
-            UseSsl      = $true
-            Username    = ''
-            Password    = ''
-            FromAddress = 'passreset@yourdomain.com'
-            FromName    = 'PassReset Self-Service'
-        }
-        EmailNotificationSettings = [PSCustomObject]@{
-            Enabled      = $false
-            Subject      = 'Your password has been changed'
-            BodyTemplate = "Hello {Username},`n`nYour password was changed successfully on {Timestamp} from IP address {IpAddress}.`n`nIf you did not make this change, contact IT Support immediately."
-        }
-        PasswordExpiryNotificationSettings = [PSCustomObject]@{
-            Enabled                 = $false
-            DaysBeforeExpiry        = 14
-            NotificationTimeUtc     = '08:00'
-            PassResetUrl            = 'https://passreset.yourdomain.com'
-            ExpiryEmailSubject      = 'Your password will expire soon'
-            ExpiryEmailBodyTemplate = "Hello {Username},`n`nYour Active Directory password will expire in {DaysRemaining} day(s) on {ExpiryDate}.`n`nPlease change your password before it expires: {PassResetUrl}"
-        }
-        SiemSettings = [PSCustomObject]@{
-            Syslog = [PSCustomObject]@{
-                Enabled  = $false
-                Host     = 'siem.yourdomain.com'
-                Port     = 514
-                Protocol = 'UDP'
-                Facility = 10
-                AppName  = 'PassReset'
-            }
-            AlertEmail = [PSCustomObject]@{
-                Enabled       = $false
-                Recipients    = @('security@yourdomain.com')
-                AlertOnEvents = @('PortalLockout')
-            }
-        }
-        ClientSettings = [PSCustomObject]@{
-            ApplicationTitle          = 'Change Account Password | Self-Service'
-            ChangePasswordTitle       = 'Change Account Password'
-            UseEmail                  = $false
-            ShowPasswordMeter         = $true
-            UsePasswordGeneration     = $false
-            MinimumDistance           = 0
-            PasswordEntropy           = 16
-            MinimumScore              = 0
-            AllowedUsernameAttributes = @('samaccountname')
-            Recaptcha                 = [PSCustomObject]@{
-                Enabled      = $false
-                SiteKey      = ''
-                PrivateKey   = ''
-                LanguageCode = 'en'
-            }
-            ValidationRegex           = [PSCustomObject]@{
-                EmailRegex    = '^[a-zA-Z0-9.!#$%&''*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*$'
-                UsernameRegex = ''
-            }
-            ChangePasswordForm        = [PSCustomObject]@{
-                HelpText                        = 'If you are having trouble with this tool, please contact IT Support.'
-                UsernameLabel                   = 'Username'
-                UsernameHelpblock               = 'Your organisation email address'
-                UsernameDefaultDomainHelperBlock = 'Your organisation username'
-                CurrentPasswordLabel            = 'Current Password'
-                CurrentPasswordHelpblock        = ''
-                NewPasswordLabel                = 'New Password'
-                NewPasswordHelpblock            = 'Choose a strong password.'
-                NewPasswordVerifyLabel          = 'Confirm New Password'
-                NewPasswordVerifyHelpblock      = ''
-                ChangePasswordButtonLabel       = 'Change Password'
-            }
-            ErrorsPasswordForm        = [PSCustomObject]@{
-                FieldRequired        = 'This field is required.'
-                PasswordMatch        = 'Passwords do not match.'
-                UsernameEmailPattern = 'Please enter a valid email address.'
-                UsernamePattern      = 'Please enter a valid username.'
-            }
-            Alerts                    = [PSCustomObject]@{
-                SuccessAlertTitle              = 'Password changed successfully.'
-                SuccessAlertBody               = 'Please note it may take a few minutes for your new password to reach all domain controllers.'
-                ErrorPasswordChangeNotAllowed  = 'You are not allowed to change your password. Please contact IT Support.'
-                ErrorInvalidCredentials        = 'Your current password is incorrect.'
-                ErrorInvalidDomain             = 'Invalid domain. Please check your username and try again.'
-                ErrorInvalidUser               = 'User account not found.'
-                ErrorCaptcha                   = 'Could not verify you are not a robot. Please try again.'
-                ErrorFieldRequired             = 'Please fill in all required fields.'
-                ErrorFieldMismatch             = 'The new passwords do not match.'
-                ErrorComplexPassword           = 'The new password does not meet complexity requirements.'
-                ErrorConnectionLdap            = 'Could not connect to the directory. Please contact IT Support.'
-                ErrorScorePassword             = 'The password is not strong enough. Please choose a stronger password.'
-                ErrorDistancePassword          = 'The new password is too similar to your current password.'
-                ErrorPwnedPassword             = 'This password has been found in public breach databases. Please choose a different password.'
-                ErrorPasswordTooYoung          = 'Your password was changed too recently. Please wait before changing it again.'
-                ErrorRateLimitExceeded         = 'Too many attempts. Please wait a few minutes and try again.'
-                ErrorPwnedPasswordCheckFailed  = 'The password breach check service is temporarily unavailable. Please try again in a moment.'
-                ErrorPortalLockout             = 'Too many failed attempts. Please wait 30 minutes before trying again.'
-                ErrorApproachingLockout        = 'Incorrect password. Warning: one more failed attempt will temporarily lock your access to this portal.'
-            }
-        }
+    # The template ships alongside the publish output (copied by Publish-PassReset.ps1)
+    $templateFile = Join-Path $PhysicalPath 'appsettings.Production.template.json'
+    if (-not (Test-Path $templateFile)) {
+        # Fallback: template next to this script (running from repo checkout)
+        $templateFile = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'appsettings.Production.template.json'
     }
 
-    $config | ConvertTo-Json -Depth 10 | Set-Content -Path $prodConfig -Encoding UTF8
-    Write-Ok "Written to $prodConfig — fill in your domain details before starting the site."
+    if (Test-Path $templateFile) {
+        Copy-Item $templateFile $prodConfig
+        Write-Ok "Written to $prodConfig — fill in your domain details before starting the site."
+    } else {
+        Write-Warn 'appsettings.Production.template.json not found — create appsettings.Production.json manually.'
+    }
 }
 
-# ─── 8. Start site ────────────────────────────────────────────────────────────
+# ─── 8. App pool environment variables (secrets) ─────────────────────────
+# Secrets are stored as IIS app pool environment variables so they never
+# touch appsettings.Production.json. Existing values are preserved.
+
+function Set-PoolEnvVar {
+    param([string] $PoolName, [string] $VarName, [SecureString] $SecureValue)
+
+    # Check if the variable already exists on the pool
+    $existing = Get-WebConfigurationProperty `
+        -PSPath 'MACHINE/WEBROOT/APPHOST' `
+        -Filter "system.applicationHost/applicationPools/add[@name='$PoolName']/environmentVariables" `
+        -Name Collection `
+        -ErrorAction SilentlyContinue |
+        Where-Object { $_.name -eq $VarName }
+
+    if ($existing) {
+        Write-Warn "$VarName already set on $PoolName — not overwriting"
+        return
+    }
+
+    $bstr  = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureValue)
+    $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+
+    Add-WebConfigurationProperty `
+        -PSPath 'MACHINE/WEBROOT/APPHOST' `
+        -Filter "system.applicationHost/applicationPools/add[@name='$PoolName']/environmentVariables" `
+        -Name '.' `
+        -Value @{ name = $VarName; value = $plain }
+
+    $plain = $null
+    Write-Ok "$VarName → $PoolName environment"
+}
+
+$secretsSet = $false
+
+if ($LdapPassword) {
+    Write-Step 'Configuring app pool environment variables (secrets)'
+    Set-PoolEnvVar $AppPoolName 'PasswordChangeOptions__LdapPassword' $LdapPassword
+    $secretsSet = $true
+}
+
+if ($SmtpPassword) {
+    if (-not $secretsSet) { Write-Step 'Configuring app pool environment variables (secrets)' }
+    Set-PoolEnvVar $AppPoolName 'SmtpSettings__Password' $SmtpPassword
+    $secretsSet = $true
+}
+
+if ($RecaptchaPrivateKey) {
+    if (-not $secretsSet) { Write-Step 'Configuring app pool environment variables (secrets)' }
+    Set-PoolEnvVar $AppPoolName 'ClientSettings__Recaptcha__PrivateKey' $RecaptchaPrivateKey
+    $secretsSet = $true
+}
+
+# ─── 9. Start site ────────────────────────────────────────────────────────────
 
 Write-Step 'Starting app pool and site'
 
@@ -524,9 +482,14 @@ if ($backupPath) {
 Write-Host ''
 Write-Host '  Next steps:' -ForegroundColor Yellow
 Write-Host "  1. Edit $prodConfig"
-Write-Host '     - Set DefaultDomain, SmtpSettings, Recaptcha keys, etc.'
+Write-Host '     - Set DefaultDomain, SmtpSettings, etc.'
 if (-not $CertThumbprint) {
 Write-Host '  2. Add an HTTPS certificate binding in IIS Manager.'
+}
+if (-not $secretsSet) {
+Write-Host '  2. Set secrets via environment variables (recommended) or in appsettings.Production.json.'
+Write-Host '     Re-run with -LdapPassword / -SmtpPassword / -RecaptchaPrivateKey, or set manually.'
+Write-Host '     See docs/Secret-Management.md for details.'
 }
 Write-Host '  3. Browse to the site and test with UseDebugProvider: true first.'
 Write-Host '  4. Set UseDebugProvider: false when ready for production.'

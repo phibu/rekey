@@ -6,6 +6,27 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.1.1] — 2026-04-01
+
+### Added
+- **EXE version stamping**: `PassReset.Web.exe` now embeds the release version in its file details (`FileVersion` / `ProductVersion`). The installer reads this for upgrade version comparison.
+- **Production config template validation**: `Publish-PassReset.ps1` now compares all config keys in `appsettings.json` against `deploy/appsettings.Production.template.json` and **fails the build** if any keys are missing — prevents shipping releases with an incomplete production config template.
+- **`deploy/appsettings.Production.template.json`**: standalone template file replaces the inline config that was previously hardcoded in the installer script. Single source of truth for the starter production config.
+- **Installer secret parameters**: `Install-PassReset.ps1` accepts `-LdapPassword`, `-SmtpPassword`, and `-RecaptchaPrivateKey` (all `SecureString`). Secrets are stored as IIS app pool environment variables, scoped to the pool — never written to `appsettings.Production.json`. Existing values are preserved on upgrade.
+- **Dark mode screenshot**: `docs/screenshot-dark.png` added; README uses `<picture>` element for automatic light/dark switching on GitHub.
+
+### Changed
+- **Installer config generation**: replaced ~125 lines of inline `PSCustomObject` with a file copy from the shipped template. Template is validated at build time, so it can never fall out of sync.
+- **Upgrade version display**: installer now reads `FileVersion` (clean `1.1.0`) instead of `ProductVersion` (includes git hash suffix).
+- **GitHub URLs**: all references updated from `phibu/passreset` to `phibu/AD-Passreset-Portal`.
+
+### Docs
+- `appsettings-Production.md`: added `FailOpenOnPwnedCheckUnavailable` and `AllowSetPasswordFallback` to the PasswordChangeOptions reference table.
+- `IIS-Setup.md`: updated Step 6 example with `-LdapPassword` / `-SmtpPassword` parameters; added environment variable note to installer feature list.
+- Updated screenshots to reflect current teal theme, lock icon header, and footer.
+
+---
+
 ## [1.1.0] — 2026-03-29
 
 ### Added

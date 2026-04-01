@@ -173,7 +173,7 @@ On the **IIS server**, run as **Administrator**:
 # Minimal — ApplicationPoolIdentity, no HTTPS binding yet
 .\deploy\Install-PassReset.ps1
 
-# Recommended — service account + certificate
+# Recommended — service account + certificate + secrets as env vars
 .\deploy\Install-PassReset.ps1 `
     -SiteName        "PassReset" `
     -AppPoolName      "PassResetPool" `
@@ -182,7 +182,9 @@ On the **IIS server**, run as **Administrator**:
     -HttpsPort        443 `
     -CertThumbprint   "PASTE_THUMBPRINT_HERE" `
     -AppPoolIdentity  "YOURDOMAIN\svc-passreset" `
-    -AppPoolPassword  (Read-Host 'App pool password' -AsSecureString)
+    -AppPoolPassword  (Read-Host 'App pool password' -AsSecureString) `
+    -LdapPassword     (Read-Host 'LDAP password' -AsSecureString) `
+    -SmtpPassword     (Read-Host 'SMTP password' -AsSecureString)
 
 # Upgrading an existing installation (unattended — skip confirmation prompt)
 .\deploy\Install-PassReset.ps1 -Force -CertThumbprint "PASTE_THUMBPRINT_HERE"
@@ -195,6 +197,7 @@ The installer:
 - Grants NTFS permissions
 - Configures the HTTPS binding
 - Writes a starter `appsettings.Production.json` (skipped if the file already exists)
+- Stores secrets as IIS app pool environment variables (existing values are never overwritten)
 
 **Upgrading:** when an existing PassReset site is detected the installer displays the installed and incoming version numbers, prompts for confirmation, and creates a dated backup of the current deployment (e.g. `C:\inetpub\PassReset_backup_20260327-1430\`) before overwriting. Pass `-Force` to skip the confirmation for unattended deployments.
 

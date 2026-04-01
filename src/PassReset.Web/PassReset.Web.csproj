@@ -4,6 +4,8 @@
     <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Version is overridden at publish time via /p:Version=x.y.z -->
+    <Version>0.0.0-dev</Version>
   </PropertyGroup>
 
   <ItemGroup>
