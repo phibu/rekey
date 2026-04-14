@@ -198,20 +198,38 @@ if ($siteExists) {
                        } else { 'unknown' }
     $incomingVersion = (Get-Item $webExe).VersionInfo.FileVersion -replace '\.0$'
 
+    # Detect downgrade vs upgrade using semantic version comparison.
+    $isDowngrade = $false
+    $parsedCurrent = $null
+    $parsedIncoming = $null
+    if ([version]::TryParse($currentVersion, [ref]$parsedCurrent) -and
+        [version]::TryParse($incomingVersion, [ref]$parsedIncoming)) {
+        if ($parsedIncoming -lt $parsedCurrent) { $isDowngrade = $true }
+    }
+
     Write-Host ''
     Write-Host '  [!!] Existing PassReset installation detected.' -ForegroundColor Yellow
     Write-Host "       Installed : v$currentVersion"              -ForegroundColor Yellow
     Write-Host "       Incoming  : v$incomingVersion"             -ForegroundColor Yellow
+    if ($isDowngrade) {
+        Write-Host '       WARNING   : Incoming version is OLDER than installed (downgrade).' -ForegroundColor Red
+        Write-Host '                   Config schema or data migrations may not reverse cleanly.' -ForegroundColor Red
+    }
     Write-Host ''
 
     if (-not $Force) {
-        $confirm = Read-Host '  Continue with upgrade? [Y/N]'
+        $prompt = if ($isDowngrade) { '  Continue with DOWNGRADE? [Y/N]' } else { '  Continue with upgrade? [Y/N]' }
+        $confirm = Read-Host $prompt
         if ($confirm -notmatch '^[Yy]') {
             Write-Host "`n  Upgrade cancelled." -ForegroundColor Yellow
             exit 0
         }
     } else {
-        Write-Ok '-Force specified — skipping upgrade confirmation'
+        if ($isDowngrade) {
+            Write-Warn '-Force specified — proceeding with downgrade despite version regression'
+        } else {
+            Write-Ok '-Force specified — skipping upgrade confirmation'
+        }
     }
 }
 
@@ -238,14 +256,34 @@ if ($siteExists) {
     Write-Step "Backing up current installation to $backupPath"
     Copy-Item -Path $PhysicalPath -Destination $backupPath -Recurse -Force
     Write-Ok "Backup created: $backupPath"
+
+    # Retention: keep the 3 most recent backups, prune older ones to prevent disk fill.
+    $parentDir     = Split-Path -Parent $PhysicalPath
+    $leafName      = Split-Path -Leaf   $PhysicalPath
+    $backupPattern = "${leafName}_backup_*"
+    $oldBackups = Get-ChildItem -Path $parentDir -Directory -Filter $backupPattern -ErrorAction SilentlyContinue |
+                  Sort-Object Name -Descending |
+                  Select-Object -Skip 3
+    foreach ($old in $oldBackups) {
+        try {
+            Remove-Item -Path $old.FullName -Recurse -Force -ErrorAction Stop
+            Write-Ok "Pruned old backup: $($old.Name)"
+        } catch {
+            Write-Warn "Could not prune old backup $($old.Name): $($_.Exception.Message)"
+        }
+    }
 }
 
-# Copy publish output (robocopy: /MIR = mirror, /NFL /NDL = quiet)
-robocopy $PublishFolder $PhysicalPath /MIR /NFL /NDL /NJH /NJS /R:3 /W:5 | Out-Null
+# Copy publish output (robocopy: /MIR = mirror, /NFL /NDL = quiet).
+# /XF preserves the operator's production config and any local overrides across mirror.
+# /XD preserves the logs folder if ever colocated under the deploy root.
+robocopy $PublishFolder $PhysicalPath /MIR /NFL /NDL /NJH /NJS /R:3 /W:5 `
+    /XF 'appsettings.Production.json' 'appsettings.Local.json' `
+    /XD 'logs' | Out-Null
 if ($LASTEXITCODE -ge 8) {
     Abort "robocopy failed with exit code $LASTEXITCODE"
 }
-Write-Ok 'Files copied'
+Write-Ok 'Files copied (preserved: appsettings.Production.json, appsettings.Local.json, logs\)'
 
 # ─── 4. App pool ──────────────────────────────────────────────────────────────
 
@@ -457,11 +495,92 @@ if ($RecaptchaPrivateKey) {
 
 Write-Step 'Starting app pool and site'
 
-Start-WebAppPool -Name $AppPoolName
-Start-Website    -Name $SiteName
+try {
+    Start-WebAppPool -Name $AppPoolName -ErrorAction Stop
+    Start-Website    -Name $SiteName    -ErrorAction Stop
 
-Write-Ok "App pool $AppPoolName started"
-Write-Ok "Site $SiteName started"
+    # Give the worker process a moment to actually start (or crash).
+    Start-Sleep -Seconds 3
+    $poolStateAfter = (Get-WebAppPoolState -Name $AppPoolName).Value
+    $siteStateAfter = (Get-WebsiteState    -Name $SiteName).Value
+    if ($poolStateAfter -ne 'Started' -or $siteStateAfter -ne 'Started') {
+        throw "Pool state: $poolStateAfter, Site state: $siteStateAfter — expected Started"
+    }
+
+    Write-Ok "App pool $AppPoolName started"
+    Write-Ok "Site $SiteName started"
+}
+catch {
+    Write-Host ''
+    Write-Host "[ERR] Startup failed: $($_.Exception.Message)" -ForegroundColor Red
+
+    if ($backupPath -and (Test-Path $backupPath)) {
+        Write-Warn 'Attempting automatic rollback from backup...'
+        try {
+            if ((Get-WebAppPoolState -Name $AppPoolName).Value -eq 'Started') {
+                Stop-WebAppPool -Name $AppPoolName -ErrorAction SilentlyContinue
+            }
+            if ((Get-WebsiteState -Name $SiteName).Value -eq 'Started') {
+                Stop-Website -Name $SiteName -ErrorAction SilentlyContinue
+            }
+            robocopy $backupPath $PhysicalPath /MIR /NFL /NDL /NJH /NJS /R:3 /W:5 | Out-Null
+            if ($LASTEXITCODE -ge 8) { throw "robocopy rollback failed ($LASTEXITCODE)" }
+            Start-WebAppPool -Name $AppPoolName -ErrorAction Stop
+            Start-Website    -Name $SiteName    -ErrorAction Stop
+            Write-Ok "Rolled back to backup: $backupPath"
+            Abort 'Upgrade failed — previous version has been restored. Investigate the new build before retrying.'
+        }
+        catch {
+            Abort "Rollback FAILED: $($_.Exception.Message)`nManual recovery: stop site, robocopy '$backupPath' → '$PhysicalPath', start site."
+        }
+    } else {
+        Abort 'Startup failed and no backup is available (fresh install). Check Event Viewer → Application log for ASP.NET Core errors.'
+    }
+}
+
+# ─── 9b. Config schema drift detection ────────────────────────────────────────
+# After a successful upgrade, compare keys in the incoming template against the
+# live production config. New keys from the template are reported so operators
+# know what to add — no auto-merge (risky with nested/array values).
+
+if ($siteExists -and (Test-Path $prodConfig)) {
+    $templateFile = Join-Path $PhysicalPath 'appsettings.Production.template.json'
+    if (Test-Path $templateFile) {
+        try {
+            $templateJson = Get-Content $templateFile -Raw | ConvertFrom-Json
+            $liveJson     = Get-Content $prodConfig   -Raw | ConvertFrom-Json
+
+            function Get-JsonKeyPaths {
+                param($Node, [string]$Prefix = '')
+                $paths = @()
+                if ($null -ne $Node -and $Node -is [PSCustomObject]) {
+                    foreach ($prop in $Node.PSObject.Properties) {
+                        $path = if ($Prefix) { "$Prefix.$($prop.Name)" } else { $prop.Name }
+                        $paths += $path
+                        if ($prop.Value -is [PSCustomObject]) {
+                            $paths += Get-JsonKeyPaths -Node $prop.Value -Prefix $path
+                        }
+                    }
+                }
+                return $paths
+            }
+
+            $templateKeys = Get-JsonKeyPaths -Node $templateJson
+            $liveKeys     = Get-JsonKeyPaths -Node $liveJson
+            $newKeys      = $templateKeys | Where-Object { $liveKeys -notcontains $_ }
+
+            if ($newKeys) {
+                Write-Host ''
+                Write-Warn 'Config schema drift detected — new keys in template not present in live config:'
+                foreach ($k in $newKeys) { Write-Host "    + $k" -ForegroundColor Yellow }
+                Write-Host '    Review appsettings.Production.template.json and add any required keys to' -ForegroundColor Yellow
+                Write-Host "    $prodConfig manually." -ForegroundColor Yellow
+            }
+        } catch {
+            Write-Warn "Config schema drift check skipped: $($_.Exception.Message)"
+        }
+    }
+}
 
 # ─── Done ─────────────────────────────────────────────────────────────────────
 
