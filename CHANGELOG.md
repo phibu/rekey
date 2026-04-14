@@ -13,6 +13,12 @@ Versions follow [Semantic Versioning](https://semver.org/).
   `SmtpSettings.TrustedCertificateThumbprints` allowlist (SHA-1 or SHA-256). No silent
   bypass — entries must be explicitly configured. See `docs/appsettings-Production.md`.
   (BUG-001)
+- **Installer**: `Install-PassReset.ps1` now preserves the existing IIS
+  AppPool identity on upgrade. Previously, running the installer without
+  `-AppPoolIdentity` would reset a manually-configured service account
+  back to `ApplicationPoolIdentity`. Fresh-install default and explicit
+  `-AppPoolIdentity` override behaviour are unchanged. See `UPGRADING.md`.
+  (BUG-003)
 
 ---
 

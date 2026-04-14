@@ -289,6 +289,21 @@ Write-Ok 'Files copied (preserved: appsettings.Production.json, appsettings.Loca
 
 Write-Step "Configuring app pool: $AppPoolName"
 
+# BUG-003: Capture existing AppPool identity BEFORE any provisioning so we can preserve it on upgrade.
+# Initialized to $null so Set-StrictMode does not fault on unset references in the branches below.
+$existingIdentityType = $null
+$existingIdentity     = $null
+if ($poolExists) {
+    try {
+        $existingIdentityType = (Get-ItemProperty "IIS:\AppPools\$AppPoolName" -Name processModel.identityType -ErrorAction Stop).Value
+        if ($existingIdentityType -eq 'SpecificUser' -or $existingIdentityType -eq 3) {
+            $existingIdentity = (Get-ItemProperty "IIS:\AppPools\$AppPoolName" -Name processModel.userName -ErrorAction Stop).Value
+        }
+    } catch {
+        Write-Warning "Could not read existing AppPool identity: $($_.Exception.Message). Will fall through to default handling."
+    }
+}
+
 if (-not $poolExists) {
     New-WebAppPool -Name $AppPoolName | Out-Null
     Write-Ok "Created app pool $AppPoolName"
@@ -300,7 +315,10 @@ Set-ItemProperty "IIS:\AppPools\$AppPoolName" enable32BitAppOnWin64 $false
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" startMode 'AlwaysRunning'
 Set-ItemProperty "IIS:\AppPools\$AppPoolName" autoStart $true
 
+# BUG-003: Four-branch identity resolution.
+# NEVER read or round-trip processModel.password — it is write-only.
 if ($AppPoolIdentity) {
+    # Explicit operator override — current behaviour preserved.
     if (-not $AppPoolPassword) {
         Abort 'AppPoolPassword must be supplied when AppPoolIdentity is set. Use: -AppPoolPassword (Read-Host ''App pool password'' -AsSecureString)'
     }
@@ -311,10 +329,20 @@ if ($AppPoolIdentity) {
     Set-ItemProperty "IIS:\AppPools\$AppPoolName" processModel.password     $plainPassword
     Set-ItemProperty "IIS:\AppPools\$AppPoolName" processModel.identityType 3  # SpecificUser
     $plainPassword = $null
-    Write-Ok "App pool identity: $AppPoolIdentity"
-} else {
+    Write-Ok "App pool identity: $AppPoolIdentity (explicit override)"
+}
+elseif ($poolExists -and ($existingIdentityType -eq 'SpecificUser' -or $existingIdentityType -eq 3)) {
+    # Preserve existing service account on upgrade — DO NOT touch identityType, userName, or password.
+    Write-Ok "App pool identity preserved: $existingIdentity (use -AppPoolIdentity to override)"
+}
+elseif ($poolExists) {
+    # Existing built-in identity (ApplicationPoolIdentity / NetworkService / LocalService / LocalSystem) — leave untouched on upgrade.
+    Write-Ok "App pool identity preserved: $existingIdentityType"
+}
+else {
+    # Fresh install, no override → default to ApplicationPoolIdentity (4).
     Set-ItemProperty "IIS:\AppPools\$AppPoolName" processModel.identityType 4  # ApplicationPoolIdentity
-    Write-Ok 'App pool identity: ApplicationPoolIdentity'
+    Write-Ok 'App pool identity: ApplicationPoolIdentity (new pool default)'
 }
 
 # ─── 5. IIS site ──────────────────────────────────────────────────────────────
@@ -381,8 +409,12 @@ if ($CertThumbprint -and $HttpPort -le 0) {
 
 Write-Step 'Setting NTFS permissions'
 
+# BUG-003: Resolve the *actual* runtime identity so the ACE matches the principal the worker runs as —
+# including the preserved-on-upgrade case where $existingIdentity holds the operator's service account.
 $identity = if ($AppPoolIdentity) {
     $AppPoolIdentity
+} elseif ($existingIdentityType -eq 'SpecificUser' -or $existingIdentityType -eq 3) {
+    $existingIdentity
 } else {
     "IIS AppPool\$AppPoolName"
 }

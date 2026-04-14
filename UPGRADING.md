@@ -31,6 +31,43 @@ Secret handling: [`docs/Secret-Management.md`](docs/Secret-Management.md).
 
 ## Version-specific notes
 
+### Upgrading from 1.2.2 → 1.2.3
+
+#### AppPool identity is now preserved on upgrade (BUG-003)
+
+`Install-PassReset.ps1` no longer resets the IIS AppPool identity when
+`-AppPoolIdentity` is not passed. If you previously configured a custom
+service account (for example `CORP\svc-passreset`) via IIS Manager or a
+prior install, the upgrade leaves it in place.
+
+- Fresh installs still default to `ApplicationPoolIdentity`.
+- Pass `-AppPoolIdentity CORP\<user> -AppPoolPassword <pw>` to override.
+- Built-in identities (`ApplicationPoolIdentity`, `NetworkService`,
+  `LocalService`, `LocalSystem`) are also preserved on upgrade.
+
+Verify after upgrade:
+
+```powershell
+Get-ItemProperty IIS:\AppPools\PassResetPool -Name processModel.userName
+```
+
+The value should match what you had configured pre-upgrade.
+
+#### Optional: internal-CA SMTP trust (BUG-001)
+
+If your SMTP relay uses a certificate issued by an internal CA that is not
+in `LocalMachine\Root`, you can now add explicit thumbprints to
+`SmtpSettings.TrustedCertificateThumbprints` (SHA-1 or SHA-256 hex). See
+[`docs/appsettings-Production.md`](docs/appsettings-Production.md). No change required
+for deployments using public CAs or already-trusted internal CAs.
+
+#### Clearer error on minimum-password-age rejection (BUG-002)
+
+Users who retry a password change within the domain's `minPwdAge` now see
+a dedicated localized message (`errorPasswordTooRecentlyChanged`) instead
+of "Unexpected Error." Override the copy via
+`ClientSettings.Alerts.errorPasswordTooRecentlyChanged` if desired.
+
 ### 1.2.1 — 2026-04-14
 
 No configuration or behavior changes. Pure dependency and security maintenance (Vite 8 via rolldown, CI token hardening, branch/tag rulesets, Dependabot). Safe rolling upgrade.
