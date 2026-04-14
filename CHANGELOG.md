@@ -6,6 +6,28 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.2.1] — 2026-04-14
+
+Dependency and security maintenance release. No behavior or configuration changes.
+
+### Changed
+- **Frontend build migrated to Vite 8.** Vite 8.0.8 uses rolldown instead of Rollup as the underlying bundler. Build output is functionally equivalent; the produced JS bundles differ slightly in chunking. `@vitejs/plugin-react` bumped to 6.0.1.
+- **Grouped npm minor/patch updates** (ESLint plugins, typescript-eslint, etc.) applied via Dependabot.
+- **NuGet packages updated**: Serilog.AspNetCore and Serilog.Sinks.File bumped to latest stable.
+- **GitHub Actions bumped**: `actions/checkout@v6.0.2`, `actions/setup-node@v6.3.0`, `actions/setup-dotnet@v5.2.0`.
+
+### Security
+- **Vite patched to 6.4.2 → 8.0.8**, resolving CVE advisories for arbitrary file read via dev-server WebSocket and path traversal in optimized deps `.map` handling.
+- **CI workflow hardened**: `GITHUB_TOKEN` permissions restricted to `contents: read` (least privilege).
+- **Repository rulesets added**: `master` branch protection (status checks, linear history, no force-push, no deletion) and `v*` tag immutability.
+- **Dependabot enabled** for npm, NuGet, and GitHub Actions with weekly grouped update PRs. Pre-release versions (TypeScript 6 beta, MUI v7+ beta, ESLint 10) are explicitly ignored until upstream stability lands.
+
+### Deferred
+- ESLint 10 upgrade waits on `eslint-plugin-react-hooks` shipping a stable with ESLint 10 peer support.
+- TypeScript 6 and MUI v7+ majors remain on pre-release channels upstream and are held back by Dependabot ignore rules.
+
+---
+
 ## [1.2.0] — 2026-04-13
 
 ### Breaking Changes
