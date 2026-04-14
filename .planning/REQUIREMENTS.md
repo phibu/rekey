@@ -62,18 +62,20 @@
 
 ## Traceability
 
-> Filled by roadmap creation. Each REQ-ID maps to exactly one phase.
+> Each REQ-ID maps to exactly one phase. Updated 2026-04-14 by roadmap creation.
 
 | REQ-ID | Phase | Plan | Status |
 |---|---|---|---|
-| BUG-001 | *(TBD)* | | Active |
-| BUG-002 | *(TBD)* | | Active |
-| BUG-003 | *(TBD)* | | Active |
-| FEAT-001 | *(TBD)* | | Active |
-| FEAT-002 | *(TBD)* | | Active |
-| FEAT-003 | *(TBD)* | | Active |
-| FEAT-004 | *(TBD)* | | Active |
-| QA-001 | *(TBD)* | | Active |
-| V2-001 | *(TBD)* | | Active |
-| V2-002 | *(TBD)* | | Active |
-| V2-003 | *(TBD)* | | Active |
+| BUG-001 | Phase 1 (v1.2.3 Hotfix) | TBD | Active |
+| BUG-002 | Phase 1 (v1.2.3 Hotfix) | TBD | Active |
+| BUG-003 | Phase 1 (v1.2.3 Hotfix) | TBD | Active |
+| FEAT-001 | Phase 3 (v1.3 UX Features) | TBD | Active |
+| FEAT-002 | Phase 3 (v1.3 UX Features) | TBD | Active |
+| FEAT-003 | Phase 3 (v1.3 UX Features) | TBD | Active |
+| FEAT-004 | Phase 3 (v1.3 UX Features) | TBD | Active |
+| QA-001 | Phase 2 (v1.3 Test Foundation) | TBD | Active |
+| V2-001 | Phase 4 (v2.0 Multi-OS PoC) | TBD | Active |
+| V2-002 | Phase 5 (v2.0 Local Password DB) | TBD | Active |
+| V2-003 | Phase 6 (v2.0 Secure Config Storage) | TBD | Active |
+
+**Coverage:** 11/11 requirements mapped ✓ · 0 orphans
