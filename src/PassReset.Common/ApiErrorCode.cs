@@ -64,4 +64,11 @@ public enum ApiErrorCode
     /// Carries the same semantic as <see cref="InvalidCredentials"/> but signals the UI to show a warning.
     /// </summary>
     ApproachingLockout = 18,
+
+    /// <summary>
+    /// Active Directory rejected the password change because the domain's minimum password age
+    /// (<c>minPwdAge</c>) has not yet elapsed since the previous change. Distinct from
+    /// <see cref="PasswordTooYoung"/> which is the portal-side pre-check.
+    /// </summary>
+    PasswordTooRecentlyChanged = 19,
 }

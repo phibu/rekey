@@ -366,6 +366,26 @@ public sealed class PasswordChangeProvider : IPasswordChangeProvider
         }
         catch (System.Runtime.InteropServices.COMException comEx)
         {
+            // BUG-002: classify well-known HResults BEFORE any SetPassword fallback.
+            // Min-age rejection must never be routed through SetPassword (which bypasses history).
+            const int E_ACCESSDENIED = unchecked((int)0x80070005);
+            const int ERROR_DS_CONSTRAINT_VIOLATION = unchecked((int)0x8007202F);
+
+            if (comEx.HResult == E_ACCESSDENIED || comEx.HResult == ERROR_DS_CONSTRAINT_VIOLATION)
+            {
+                _logger.LogWarning(comEx,
+                    "AD rejected ChangePassword for {User} with HRESULT=0x{Hex:X8}; message={Message}. " +
+                    "Treating as minimum-password-age violation. If this user IS allowed to change password, " +
+                    "verify the service account has the 'Change Password' extended right.",
+                    userPrincipal.SamAccountName,
+                    comEx.HResult,
+                    comEx.Message);
+
+                throw new ApiErrorException(
+                    "Your password was changed too recently. Please wait before trying again.",
+                    ApiErrorCode.PasswordTooRecentlyChanged);
+            }
+
             // COMException is thrown by System.DirectoryServices when the LDAP operation is
             // rejected at the protocol level — typically because the service account has
             // "Reset Password" rights but not "Change Password" rights on the target object.
