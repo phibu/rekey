@@ -62,8 +62,8 @@ Milestone v1.3.0: ready for release after human UAT
 
 ### Active TODOs
 
-- Human UAT for phase 03 (4 items listed in 03-VERIFICATION.md frontmatter: branding, AD RootDSE live query, clipboard permission, HIBP DevTools inspect)
-- Run `/gsd-ship` to prepare v1.3.0 release after UAT passes
+- Review + merge PR #17 (https://github.com/phibu/AD-Passreset-Portal/pull/17) once CI green
+- Tag `v1.3.0` after merge → release.yml builds and publishes the zip
 - Promote backlog item 999.1 after v1.3.0 ships
 
 ### Blockers
