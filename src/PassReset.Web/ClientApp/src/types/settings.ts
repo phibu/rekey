@@ -82,6 +82,17 @@ export interface ClientSettings {
   branding?: BrandingSettings;
   showAdPasswordPolicy?: boolean;
   clipboardClearSeconds?: number;
+  // FEAT-004: when true, the blur-triggered HIBP indicator stays silent if HIBP
+  // is unreachable (matches server-side PasswordChangeOptions.FailOpenOnPwnedCheckUnavailable).
+  failOpenOnPwnedCheckUnavailable?: boolean;
+}
+
+// FEAT-004: response shape from POST /api/password/pwned-check.
+// The server returns the raw HIBP range body (suffix:count lines) so the client
+// can perform the suffix match locally — server never learns which suffix matched.
+export interface PwnedCheckResponse {
+  suffixes: string;
+  unavailable: boolean;
 }
 
 export interface PolicyResponse {

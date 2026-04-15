@@ -21,6 +21,8 @@ import { generatePassword } from '../utils/passwordGenerator';
 import { scheduleClipboardClear, type ClipboardClearHandle } from '../utils/clipboardClear';
 import AdPasswordPolicyPanel from './AdPasswordPolicyPanel';
 import ClipboardCountdown from './ClipboardCountdown';
+import HibpIndicator from './HibpIndicator';
+import { useHibpCheck } from '../hooks/useHibpCheck';
 import { PasswordStrengthMeter } from './PasswordStrengthMeter';
 
 interface Props {
@@ -123,6 +125,15 @@ export function PasswordForm({ settings, onSuccess }: Props) {
   const { executeRecaptcha } = useRecaptcha(
     settings.recaptcha?.enabled ? settings.recaptcha.siteKey : undefined
   );
+
+  // FEAT-004: HIBP blur-triggered breach indicator. Debounced at 400ms,
+  // AbortController-cancelled on subsequent blurs. Plaintext never leaves the
+  // browser — only the 5-char SHA-1 prefix is POSTed to the server.
+  const { state: hibpState, count: hibpCount, check: hibpCheck } = useHibpCheck(400);
+  // Fail-open flag mirrors the server-side PasswordChangeOptions. Default TRUE
+  // (hide indicator on HIBP outage) unless operator explicitly sets it to false,
+  // in which case the warning Alert is rendered.
+  const hibpFailOpen = settings.failOpenOnPwnedCheckUnavailable !== false;
 
   function validate(): FormErrors {
     const errs: FormErrors = {};
@@ -335,6 +346,7 @@ export function PasswordForm({ settings, onSuccess }: Props) {
         type={showNew ? 'text' : 'password'}
         value={newPassword}
         onChange={e => setNewPassword(e.target.value)}
+        onBlur={e => hibpCheck(e.target.value)}
         autoComplete="new-password"
         inputProps={{ maxLength: 256 }}
         InputProps={{
@@ -355,6 +367,9 @@ export function PasswordForm({ settings, onSuccess }: Props) {
         }}
         sx={{ mb: settings.showPasswordMeter ? 0.5 : 2 }}
       />
+
+      {/* FEAT-004: HIBP breach indicator (blur-triggered, debounced, k-anonymity) */}
+      <HibpIndicator state={hibpState} count={hibpCount} failOpen={hibpFailOpen} />
 
       {/* FEAT-003: clipboard auto-clear countdown / cleared chip */}
       <ClipboardCountdown remaining={clipboardRemaining} state={clipboardState} />
