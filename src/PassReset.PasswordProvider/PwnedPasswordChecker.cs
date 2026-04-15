@@ -34,7 +34,7 @@ public sealed class PwnedPasswordChecker : IPwnedPasswordChecker
     /// </summary>
     public async Task<(string RangeBody, bool Unavailable)> FetchRangeAsync(string sha1Prefix5, CancellationToken ct = default)
     {
-        if (string.IsNullOrEmpty(sha1Prefix5) || sha1Prefix5.Length != 5)
+        if (string.IsNullOrEmpty(sha1Prefix5) || sha1Prefix5.Length != 5 || !IsHexPrefix(sha1Prefix5))
             return (string.Empty, true);
 
         try
@@ -53,9 +53,21 @@ public sealed class PwnedPasswordChecker : IPwnedPasswordChecker
         }
         catch (Exception ex)
         {
-            _logger?.LogWarning(ex, "HaveIBeenPwned range fetch failed for prefix {Prefix}", sha1Prefix5);
+            // Prefix is whitelist-validated to [0-9A-Fa-f]{5} above, so it cannot carry
+            // CR/LF or other untrusted content into log output (cs/log-forging).
+            _logger?.LogWarning(ex, "HaveIBeenPwned range fetch failed for prefix {Prefix}", sha1Prefix5.ToUpperInvariant());
             return (string.Empty, true);
         }
+    }
+
+    private static bool IsHexPrefix(string s)
+    {
+        foreach (var c in s)
+        {
+            var hex = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+            if (!hex) return false;
+        }
+        return true;
     }
 
     /// <summary>
