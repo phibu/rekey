@@ -221,6 +221,38 @@ public sealed class PasswordChangeProvider : IPasswordChangeProvider
         return TimeSpan.MaxValue;
     }
 
+    /// <inheritdoc />
+    public Task<PasswordPolicy?> GetEffectivePasswordPolicyAsync()
+    {
+        try
+        {
+            using var entry = AcquireDomainEntry();
+
+            var minLen     = (int)(entry.Properties["minPwdLength"].Value     ?? 0);
+            var pwdProps   = Convert.ToInt64(entry.Properties["pwdProperties"].Value ?? 0L);
+            var historyLen = (int)(entry.Properties["pwdHistoryLength"].Value ?? 0);
+
+            // Same shape as maxPwdAge — System.DirectoryServices yields a long for these
+            // attributes (negative 100-nanosecond intervals).
+            var minAgeTicks = entry.Properties["minPwdAge"].Value is long min ? Math.Abs(min) : 0L;
+            var maxAgeTicks = entry.Properties["maxPwdAge"].Value is long max ? Math.Abs(max) : 0L;
+
+            const bool DOMAIN_PASSWORD_COMPLEX = true; // for readability
+            var requiresComplexity = (pwdProps & 0x1L) != 0L && DOMAIN_PASSWORD_COMPLEX;
+
+            var minAgeDays = (int)TimeSpan.FromTicks(minAgeTicks).TotalDays;
+            var maxAgeDays = (int)TimeSpan.FromTicks(maxAgeTicks).TotalDays;
+
+            return Task.FromResult<PasswordPolicy?>(
+                new PasswordPolicy(minLen, requiresComplexity, historyLen, minAgeDays, maxAgeDays));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to query effective password policy from AD");
+            return Task.FromResult<PasswordPolicy?>(null);
+        }
+    }
+
     // ─── Private helpers ──────────────────────────────────────────────────────
 
     private bool ValidateUserCredentials(string upn, string currentPassword, PrincipalContext principalContext)

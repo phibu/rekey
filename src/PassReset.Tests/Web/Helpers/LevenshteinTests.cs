@@ -15,6 +15,8 @@ public class LevenshteinTests
         public string? GetUserEmail(string u) => null;
         public IEnumerable<(string Username, string Email, DateTime? PasswordLastSet)> GetUsersInGroup(string g) => [];
         public TimeSpan GetDomainMaxPasswordAge() => TimeSpan.MaxValue;
+        public Task<PasswordPolicy?> GetEffectivePasswordPolicyAsync() =>
+            Task.FromResult<PasswordPolicy?>(null);
     }
 
     private static int Distance(string a, string b) =>

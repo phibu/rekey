@@ -141,6 +141,10 @@ public sealed class LockoutPasswordChangeProvider : IPasswordChangeProvider, ILo
     /// <inheritdoc />
     public TimeSpan GetDomainMaxPasswordAge() => _inner.GetDomainMaxPasswordAge();
 
+    /// <inheritdoc />
+    public Task<PasswordPolicy?> GetEffectivePasswordPolicyAsync() =>
+        _inner.GetEffectivePasswordPolicyAsync();
+
     // ─── Private helpers ──────────────────────────────────────────────────────
 
     /// <summary>

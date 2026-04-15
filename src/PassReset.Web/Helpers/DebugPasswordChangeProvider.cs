@@ -53,4 +53,7 @@ internal sealed class DebugPasswordChangeProvider : IPasswordChangeProvider
     }
 
     public TimeSpan GetDomainMaxPasswordAge() => TimeSpan.FromDays(90);
+
+    public Task<PasswordPolicy?> GetEffectivePasswordPolicyAsync() =>
+        Task.FromResult<PasswordPolicy?>(new PasswordPolicy(12, true, 24, 1, 90));
 }

@@ -33,6 +33,12 @@ public interface IPasswordChangeProvider
     TimeSpan GetDomainMaxPasswordAge();
 
     /// <summary>
+    /// Returns the effective default-domain password policy from RootDSE,
+    /// or null if the AD query fails. Implementations must not throw.
+    /// </summary>
+    Task<PasswordPolicy?> GetEffectivePasswordPolicyAsync();
+
+    /// <summary>
     /// Computes the Levenshtein distance between two passwords.
     /// </summary>
     /// <param name="currentPassword">The current password.</param>

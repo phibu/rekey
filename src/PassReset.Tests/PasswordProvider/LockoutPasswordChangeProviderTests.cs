@@ -161,5 +161,7 @@ public class LockoutPasswordChangeProviderTests
         public string? GetUserEmail(string username) => null;
         public IEnumerable<(string Username, string Email, DateTime? PasswordLastSet)> GetUsersInGroup(string groupName) => [];
         public TimeSpan GetDomainMaxPasswordAge() => TimeSpan.MaxValue;
+        public Task<PasswordPolicy?> GetEffectivePasswordPolicyAsync() =>
+            Task.FromResult<PasswordPolicy?>(null);
     }
 }
