@@ -503,8 +503,12 @@ public sealed class PasswordChangeProvider : IPasswordChangeProvider
             if (_options.UseAutomaticContext || !_options.AllowSetPasswordFallback)
             {
                 ExceptionChainLogger.LogExceptionChain(_logger, comEx,
-                    "ChangePassword failed (HRESULT={HResult}); SetPassword fallback is {Status} (UseAutomaticContext={Auto}, AllowSetPasswordFallback={Allow})",
-                    comEx.HResult, _options.AllowSetPasswordFallback ? "disabled (auto context)" : "disabled", _options.UseAutomaticContext, _options.AllowSetPasswordFallback);
+                    "ChangePassword failed (HRESULT={HResult}); SetPassword fallback is {Status} " +
+                    "(UseAutomaticContext={UseAutomaticContext}, AllowSetPasswordFallback={AllowSetPasswordFallback})",
+                    comEx.HResult,
+                    _options.AllowSetPasswordFallback ? "disabled (auto context)" : "disabled",
+                    _options.UseAutomaticContext,
+                    _options.AllowSetPasswordFallback);
                 throw;
             }
 
