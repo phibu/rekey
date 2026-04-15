@@ -10,6 +10,23 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [1.3.1] — 2026-04-15
+
+Diagnostic patch release. No user-visible behavior changes. Existing `appsettings.Production.json` continues to work unchanged; operators can flip `Serilog:MinimumLevel:Default` to `Debug` to enable the new step-granular diagnostics.
+
+### Added
+- **Structured AD diagnostics** (BUG-004): every password-change request now correlates via W3C `Activity.TraceId` (pushed as a Serilog `LogContext` property by a new `TraceIdEnricherMiddleware`). `PasswordController.PostAsync` opens a request-scoped `BeginScope` with `Username`, `TraceId`, and `ClientIp`. `PasswordChangeProvider.PerformPasswordChangeAsync` opens a nested AD-context scope (`Domain`, `DomainController`, `IdentityType`, `UserCannotChangePassword`, `LastPasswordSetUtc`) once the user principal is resolved, and emits `Debug` step-before/after events (with elapsed milliseconds) around user lookup, `ChangePasswordInternal`, and `Save`. `LockoutPasswordChangeProvider` adds `Debug` events for counter increments and eviction sweeps; existing `Warning` logs for `ApproachingLockout` / `PortalLockout` are preserved.
+- **`ExceptionChainLogger`** helper: for `DirectoryServicesCOMException` and `PasswordException`, walks `InnerException` and emits a structured `ExceptionChain` property — an array of `{depth, type, hresult, message}` — so operators can diagnose intermittent `0x80070005 (E_ACCESSDENIED)` and related failures without repro-in-debugger. `PrincipalOperationException` gets its own targeted catch with default Serilog exception destructure (no chain walker).
+
+### Testing
+- `ExceptionChainLoggerTests` — unit tests for both exception types using a handwritten `ListLogEventSink` (no new Serilog test packages).
+- `PasswordLogRedactionTests` — sentinel-plaintext tests across `PasswordChangeProvider`, `LockoutPasswordChangeProvider`, and end-to-end via `WebApplicationFactory`. Asserts no known plaintext passwords ever appear in any rendered message or property value.
+
+### Security
+- Plaintext passwords provably never reach log output — enforced by `PasswordLogRedactionTests` as a CI gate.
+
+---
+
 ## [1.3.0] — 2026-04-15
 
 Feature release adding four opt-in UX improvements plus the automated test foundation. All new settings default off / fail-closed, so the v1.2.3 behavior is preserved when operators omit the new config blocks.
