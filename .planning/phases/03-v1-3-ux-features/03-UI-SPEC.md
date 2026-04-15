@@ -1,7 +1,8 @@
 ---
 phase: 3
 slug: v1-3-ux-features
-status: draft
+status: approved
+reviewed_at: 2026-04-15
 shadcn_initialized: false
 preset: none
 created: 2026-04-15
@@ -61,17 +62,18 @@ Declared values (all multiples of 4, mapped to MUI `theme.spacing` units where 1
 Inherits from existing MUI theme (`fontFamily: '"Inter", "Roboto", "Helvetica Neue", Arial, sans-serif'`).
 Source: App.tsx `buildTheme`.
 
+**Focal point:** The card heading "Change Account Password" (`h5`, 24px, weight 600) is the primary visual anchor on the page. All other type scales descend from it.
+
 | Role | Size | MUI Variant | Weight | Line Height | Usage |
 |------|------|-------------|--------|-------------|-------|
-| Body | 14px | `body2` | 400 | 1.5 | Helper text, policy panel lines, HIBP copy, branding usage text block |
+| Body | 14px | `body2` | 400 | 1.5 | Helper text, policy panel lines, HIBP copy, branding usage text block, footer text, HIBP "powered by k-anonymity" note |
 | Label | 16px | `body1` / TextField label | 400 | 1.5 | Form field labels, portal name in header |
-| Heading | 20px | `h6` | 700 | 1.2 | App header (LockPersonIcon + product name) |
+| Heading | 20px | `h6` | 600 | 1.2 | App header (LockPersonIcon + product name) |
 | Display | 24px | `h5` | 600 | 1.2 | Card heading ("Change Account Password") |
 
 **Constraints:**
-- Maximum 2 weights in use: 400 (regular) and 600/700 (semibold/bold — MUI uses 700 for h6, 600 for buttons and h5)
-- Use `fontWeight={600}` for the card title; `fontWeight={700}` for the app header only
-- Caption (`variant="caption"`) at 12px/400 for footer text and HIBP "powered by k-anonymity" note
+- Exactly 4 font sizes: 14, 16, 20, 24px. No `caption` variant — footer text and HIBP attribution use `body2` (14px) with `color="text.secondary"`.
+- Exactly 2 weights: 400 (regular body/labels) and 600 (all headings and primary button). App header `h6` uses 600 (overriding MUI's default 700) to keep the scale to two weights.
 
 ---
 
@@ -219,6 +221,7 @@ Chip placed at `sx={{ mt: 1 }}` below generate-password icon button row inside t
 |---------|------|
 | Primary CTA | "Change Password" (existing — unchanged) |
 | Generate button tooltip | "Generate secure password" |
+| Generate button aria-label | "Generate secure password" (required — tooltips are unreliable on mobile screen readers) |
 | HIBP safe | "No known breaches found." |
 | HIBP breached | "Found in {n} data breach{plural}. Choose a different password." |
 | HIBP unavailable (fail-closed) | "Could not verify password safety. Proceed with caution." |
@@ -263,11 +266,11 @@ No new npm packages are introduced by this phase. All new components use existin
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS
+- [x] Dimension 6 Registry Safety: PASS
 
-**Approval:** pending
+**Approval:** approved 2026-04-15
