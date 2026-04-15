@@ -140,4 +140,29 @@
 - Orphans: **0**
 
 ---
-*Last updated: 2026-04-14 (initial roadmap)*
+
+## Backlog
+
+### Phase 999.1: Diagnose E_ACCESSDENIED password change failures with structured logging (BACKLOG)
+
+**Goal:** [Captured for future planning] Diagnose intermittent `0x80070005 (E_ACCESSDENIED)` password change failures by adding structured logging around every step of the AD password change flow. External behavior unchanged — only internal diagnostics improved.
+
+**Requirements:** TBD
+
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (promote with /gsd:review-backlog when ready)
+
+**Context captured:**
+- Files: `src/PassReset.PasswordProvider/PasswordChangeProvider.cs` (primary), `LockoutPasswordChangeProvider.cs`, `src/PassReset.Web/Controllers/PasswordController.cs`
+- Add exception chain logger (type, HResult, message, depth)
+- Step-before/after logging around user lookup, ChangePasswordInternal, Save()
+- Targeted catches: `PasswordException`, `PrincipalOperationException`, `DirectoryServicesCOMException`
+- Controller-level TraceId correlation via `HttpContext.TraceIdentifier`
+- AD context logging (domain, DC, identity type, UserCannotChangePassword, LastPasswordSet)
+- Lockout decorator state-transition logging
+- Constraints: no passwords/secrets logged, user-facing errors remain generic, no DB/audit dependencies
+
+---
+*Last updated: 2026-04-15 (added backlog 999.1)*
