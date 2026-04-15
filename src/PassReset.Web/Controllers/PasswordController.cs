@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
@@ -23,7 +24,13 @@ public sealed class PasswordController : ControllerBase
     private readonly IOptions<ClientSettings> _clientSettings;
     private readonly IOptions<EmailNotificationSettings> _emailNotifSettings;
     private readonly PasswordPolicyCache _policyCache;
+    private readonly IPwnedPasswordChecker _pwnedChecker;
+    private readonly PasswordChangeOptions _passwordOptions;
     private readonly ILogger<PasswordController> _logger;
+
+    // Pre-compiled 5-char hex regex for pwned-check prefix validation.
+    private static readonly Regex Sha1PrefixRegex =
+        new("^[a-fA-F0-9]{5}$", RegexOptions.Compiled);
 
     // Static HttpClient for reCAPTCHA v3 verification — avoids socket exhaustion.
     // PooledConnectionLifetime ensures DNS changes are respected without restarting the process.
@@ -43,6 +50,8 @@ public sealed class PasswordController : ControllerBase
         IOptions<ClientSettings> clientSettings,
         IOptions<EmailNotificationSettings> emailNotifSettings,
         PasswordPolicyCache policyCache,
+        IPwnedPasswordChecker pwnedChecker,
+        IOptions<PasswordChangeOptions> passwordOptions,
         ILogger<PasswordController> logger)
     {
         _provider           = provider;
@@ -51,6 +60,8 @@ public sealed class PasswordController : ControllerBase
         _clientSettings     = clientSettings;
         _emailNotifSettings = emailNotifSettings;
         _policyCache        = policyCache;
+        _pwnedChecker       = pwnedChecker;
+        _passwordOptions    = passwordOptions.Value;
         _logger             = logger;
     }
 
@@ -76,6 +87,48 @@ public sealed class PasswordController : ControllerBase
         if (!_clientSettings.Value.ShowAdPasswordPolicy) return NotFound();
         var policy = await _policyCache.GetOrFetchAsync();
         return policy is null ? NotFound() : Ok(policy);
+    }
+
+    /// <summary>
+    /// FEAT-004: HIBP k-anonymity pre-check.
+    /// Accepts a 5-char SHA-1 hex prefix, proxies to the HIBP range API, and returns
+    /// the raw suffix list. The client performs the suffix match locally so the server
+    /// never learns which suffix matched. Plaintext never leaves the browser.
+    /// Rate-limited via the <c>pwned-check-window</c> policy (20/5min/IP).
+    /// Honors <see cref="PasswordChangeOptions.FailOpenOnPwnedCheckUnavailable"/>.
+    /// POST /api/password/pwned-check
+    /// </summary>
+    [HttpPost("pwned-check")]
+    [EnableRateLimiting("pwned-check-window")]
+    [RequestSizeLimit(64)]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> PwnedCheckAsync([FromBody] PwnedCheckRequest req, CancellationToken ct)
+    {
+        if (req is null || req.Prefix is null || req.Prefix.Length != 5 || !Sha1PrefixRegex.IsMatch(req.Prefix))
+            return BadRequest();
+
+        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+        var (body, unavailable) = await _pwnedChecker.FetchRangeAsync(req.Prefix, ct);
+        if (unavailable)
+        {
+            _siemService.LogEvent(
+                SiemEventType.Generic,
+                "pwned-check",
+                clientIp,
+                $"HIBP range fetch unavailable; FailOpen={_passwordOptions.FailOpenOnPwnedCheckUnavailable}");
+
+            if (_passwordOptions.FailOpenOnPwnedCheckUnavailable)
+                return Ok(new { suffixes = string.Empty, unavailable = true });
+
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                new { suffixes = string.Empty, unavailable = true });
+        }
+
+        return Ok(new { suffixes = body, unavailable = false });
     }
 
     /// <summary>

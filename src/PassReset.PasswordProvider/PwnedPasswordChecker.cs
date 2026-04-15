@@ -11,7 +11,7 @@ namespace PassReset.PasswordProvider;
 /// <see cref="HttpMessageHandler"/> can be substituted in tests.
 /// See https://haveibeenpwned.com/API/v2#PwnedPasswords
 /// </summary>
-public sealed class PwnedPasswordChecker
+public sealed class PwnedPasswordChecker : IPwnedPasswordChecker
 {
     private readonly HttpClient _http;
     private readonly ILogger<PwnedPasswordChecker>? _logger;
@@ -27,45 +27,59 @@ public sealed class PwnedPasswordChecker
     }
 
     /// <summary>
+    /// Fetches the raw HIBP k-anonymity range body for the given 5-char SHA-1 hex prefix.
+    /// The HIBP API is case-insensitive on the prefix; we upper-case for consistency.
+    /// On non-success or exception, returns <c>(string.Empty, true)</c> so the caller
+    /// can decide whether to fail open or closed.
+    /// </summary>
+    public async Task<(string RangeBody, bool Unavailable)> FetchRangeAsync(string sha1Prefix5, CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(sha1Prefix5) || sha1Prefix5.Length != 5)
+            return (string.Empty, true);
+
+        try
+        {
+            using var response = await _http.GetAsync(
+                $"range/{sha1Prefix5.ToUpperInvariant()}", ct).ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger?.LogWarning("HaveIBeenPwned API returned {StatusCode}", response.StatusCode);
+                return (string.Empty, true);
+            }
+
+            var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            return (body, false);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(ex, "HaveIBeenPwned range fetch failed for prefix {Prefix}", sha1Prefix5);
+            return (string.Empty, true);
+        }
+    }
+
+    /// <summary>
     /// Checks whether the password appears in the HaveIBeenPwned database.
     /// Returns <see langword="true"/> if confirmed pwned, <see langword="false"/> if confirmed clean,
     /// or <see langword="null"/> if the API was unreachable so the caller can surface a distinct error.
     /// </summary>
     public async Task<bool?> IsPwnedPasswordAsync(string plaintext)
     {
-        try
+        var hash = ComputeSha1Hex(plaintext).ToUpperInvariant();
+        var prefix = hash[..5];
+        var suffix = hash[5..];
+
+        var (body, unavailable) = await FetchRangeAsync(prefix).ConfigureAwait(false);
+        if (unavailable) return null;
+
+        foreach (var line in body.Split('\n', StringSplitOptions.RemoveEmptyEntries))
         {
-            var hash = ComputeSha1Hex(plaintext).ToUpperInvariant();
-            var prefix = hash[..5];
-            var suffix = hash[5..];
-
-            using var response = await _http.GetAsync(
-                $"range/{prefix}").ConfigureAwait(false);
-
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger?.LogWarning("HaveIBeenPwned API returned {StatusCode}", response.StatusCode);
-                return null;
-            }
-
-            var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-
-            foreach (var line in body.Split('\n', StringSplitOptions.RemoveEmptyEntries))
-            {
-                var colon = line.IndexOf(':');
-                if (colon > 0 && line[..colon].Trim().Equals(suffix, StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-
-            return false;
+            var colon = line.IndexOf(':');
+            if (colon > 0 && line[..colon].Trim().Equals(suffix, StringComparison.OrdinalIgnoreCase))
+                return true;
         }
-        catch (Exception ex)
-        {
-            // API unreachable — return null so the caller can surface a distinct error
-            // rather than silently blocking the password change.
-            _logger?.LogWarning(ex, "HaveIBeenPwned API call failed");
-            return null;
-        }
+
+        return false;
     }
 
     private static string ComputeSha1Hex(string input)
