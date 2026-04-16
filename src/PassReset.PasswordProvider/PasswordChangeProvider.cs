@@ -132,6 +132,11 @@ public sealed class PasswordChangeProvider : IPasswordChangeProvider
                 return new ApiErrorItem(ApiErrorCode.InvalidCredentials);
             }
 
+            // STAB-004: defense-in-depth pre-check. Existing COMException catch at the bind
+            // boundary remains the floor (D-05). This is the fast path (D-04).
+            var preCheck = PreCheckMinPwdAge(username);
+            if (preCheck != null) return preCheck;
+
             // ─ Step: change-password-internal ────────────────────────────────────
             using (_logger.BeginScope(new { Step = "change-password-internal" }))
             {
@@ -644,5 +649,67 @@ public sealed class PasswordChangeProvider : IPasswordChangeProvider
             return TimeSpan.FromTicks(Math.Abs(ticks));
 
         return TimeSpan.Zero;
+    }
+
+    /// <summary>
+    /// STAB-004 pre-check. Returns non-null when the user's pwdLastSet is newer than the
+    /// domain minPwdAge. Matches the existing service-account-with-fallback pattern
+    /// (D-06) by calling AcquirePrincipalContext(). Never throws — returns null on any
+    /// unreadable state so the existing COMException catch remains the
+    /// defense-in-depth floor (D-05).
+    /// </summary>
+    private ApiErrorItem? PreCheckMinPwdAge(string username)
+    {
+        try
+        {
+            var minAge = AcquireDomainMinPasswordAge();
+            if (minAge <= TimeSpan.Zero) return null;
+
+            using var ctx = AcquirePrincipalContext();
+            using var user = UserPrincipal.FindByIdentity(ctx, username);
+            if (user == null) return null;
+
+            var lastSet = user.LastPasswordSet;
+            if (lastSet == null) return null; // must-change-at-next-logon — exempt
+
+            var result = EvaluateMinPwdAge(lastSet.Value, minAge, DateTime.UtcNow);
+            if (result != null)
+            {
+                _logger.LogWarning(
+                    "STAB-004 pre-check blocked consecutive change for {User}: lastSet={LastSet} minAge={MinAge}",
+                    username, lastSet.Value.ToUniversalTime(), minAge);
+            }
+            return result;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "STAB-004 pre-check failed for {User}; falling through to bind and catch path",
+                username);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Pure logic extracted for unit testing. Evaluates whether <paramref name="lastSet"/>
+    /// violates <paramref name="minAge"/> relative to <paramref name="now"/>.
+    /// Returns null when the age requirement is satisfied.
+    /// </summary>
+    internal static ApiErrorItem? EvaluateMinPwdAge(DateTime lastSet, TimeSpan minAge, DateTime now)
+    {
+        var elapsed = now - lastSet.ToUniversalTime();
+        if (elapsed >= minAge) return null;
+
+        var remaining = minAge - elapsed;
+        int remainingMinutes = Math.Max(1, (int)Math.Ceiling(remaining.TotalMinutes));
+        int policyMinutes    = Math.Max(1, (int)Math.Ceiling(minAge.TotalMinutes));
+        int elapsedMinutes   = Math.Max(0, (int)Math.Floor(elapsed.TotalMinutes));
+
+        var message =
+            $"Password was changed {elapsedMinutes} minute(s) ago; " +
+            $"AD policy requires {policyMinutes} minute(s) between changes " +
+            $"({remainingMinutes} minute(s) remaining).";
+
+        return new ApiErrorItem(ApiErrorCode.PasswordTooRecentlyChanged, message);
     }
 }
