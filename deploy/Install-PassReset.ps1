@@ -127,6 +127,200 @@ function Restore-StoppedForeignSites {
 
 function Abort       { param([string]$Msg) Restore-StoppedForeignSites; Write-Host "`n[ERR] $Msg`n" -ForegroundColor Red; exit 1 }
 
+# ─── Config Sync Helpers (plan 08-05 / STAB-010) ──────────────────────────────
+# Schema-driven additive merge: walks appsettings.schema.json (NOT the template),
+# enumerates every leaf key + default, and adds anything missing from the operator's
+# live appsettings.Production.json. Never modifies existing values (D-13). Arrays
+# are atomic (D-14). Obsolete keys (x-passreset-obsolete) are reported in Merge
+# mode and prompted in Review mode. Key-path separator: ':' (ASP.NET Core IOptions
+# convention, matches env-var PasswordChangeOptions__LdapPort notation).
+
+function Get-SchemaKeyManifest {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] $Schema,
+        [string] $Prefix = ''
+    )
+    $entries = @()
+    if ($null -eq $Schema -or $null -eq $Schema.properties) { return $entries }
+    foreach ($prop in $Schema.properties.PSObject.Properties) {
+        $name = $prop.Name
+        $node = $prop.Value
+        $path = if ($Prefix) { "${Prefix}:${name}" } else { $name }
+        $isObj = ($node.type -eq 'object') -or ($null -ne $node.properties)
+        if ($isObj) {
+            # Recurse into nested object (don't emit a leaf for the object itself)
+            $entries += Get-SchemaKeyManifest -Schema $node -Prefix $path
+        } else {
+            # Leaf: scalar OR array (arrays atomic per D-14)
+            $entries += [PSCustomObject]@{
+                Path           = $path
+                Default        = if ($node.PSObject.Properties.Name -contains 'default') { $node.default } else { $null }
+                HasDefault     = ($node.PSObject.Properties.Name -contains 'default')
+                IsObsolete     = ($node.'x-passreset-obsolete' -eq $true)
+                ObsoleteSince  = $node.'x-passreset-obsolete-since'
+                Type           = $node.type
+            }
+        }
+    }
+    return $entries
+}
+
+function Get-LiveValueAtPath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] $Config,
+        [Parameter(Mandatory)] [string] $Path
+    )
+    $segments = $Path -split ':'
+    $node = $Config
+    foreach ($seg in $segments) {
+        if ($null -eq $node -or -not ($node -is [PSCustomObject])) {
+            return @{ Exists = $false; Value = $null }
+        }
+        $prop = $node.PSObject.Properties[$seg]
+        if ($null -eq $prop) {
+            return @{ Exists = $false; Value = $null }
+        }
+        $node = $prop.Value
+    }
+    return @{ Exists = $true; Value = $node }
+}
+
+function Set-LiveValueAtPath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] $Config,
+        [Parameter(Mandatory)] [string] $Path,
+        $Value
+    )
+    $segments = $Path -split ':'
+    $node = $Config
+    for ($i = 0; $i -lt $segments.Length - 1; $i++) {
+        $seg = $segments[$i]
+        $prop = $node.PSObject.Properties[$seg]
+        if ($null -eq $prop) {
+            # Create intermediate object
+            $node | Add-Member -NotePropertyName $seg -NotePropertyValue ([PSCustomObject]@{})
+            $prop = $node.PSObject.Properties[$seg]
+        } elseif (-not ($prop.Value -is [PSCustomObject])) {
+            # Existing scalar where we expected object; cannot proceed (don't overwrite operator value)
+            throw "Cannot create nested key at '$Path' - intermediate '$seg' exists as a non-object value."
+        }
+        $node = $prop.Value
+    }
+    $leaf = $segments[-1]
+    if ($node.PSObject.Properties.Name -contains $leaf) {
+        # Per D-09/D-13: never modify existing values
+        return $false
+    }
+    $node | Add-Member -NotePropertyName $leaf -NotePropertyValue $Value
+    return $true
+}
+
+function Remove-LiveValueAtPath {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] $Config,
+        [Parameter(Mandatory)] [string] $Path
+    )
+    $segments = $Path -split ':'
+    $node = $Config
+    for ($i = 0; $i -lt $segments.Length - 1; $i++) {
+        $seg = $segments[$i]
+        $prop = $node.PSObject.Properties[$seg]
+        if ($null -eq $prop -or -not ($prop.Value -is [PSCustomObject])) { return $false }
+        $node = $prop.Value
+    }
+    $leaf = $segments[-1]
+    if ($node.PSObject.Properties.Name -notcontains $leaf) { return $false }
+    $node.PSObject.Properties.Remove($leaf)
+    return $true
+}
+
+function Sync-AppSettingsAgainstSchema {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $SchemaPath,
+        [Parameter(Mandatory)] [string] $ConfigPath,
+        [Parameter(Mandatory)] [ValidateSet('Merge','Review','None')] [string] $Mode
+    )
+    if ($Mode -eq 'None') {
+        Write-Ok 'Config sync skipped (-ConfigSync None)'
+        return
+    }
+    if (-not (Test-Path $SchemaPath)) {
+        Write-Warn "Schema file not found at $SchemaPath - cannot sync."
+        return
+    }
+    if (-not (Test-Path $ConfigPath)) {
+        Write-Warn "Live config not found at $ConfigPath - nothing to sync."
+        return
+    }
+
+    $schema = Get-Content $SchemaPath -Raw | ConvertFrom-Json
+    $live   = Get-Content $ConfigPath -Raw | ConvertFrom-Json
+
+    $manifest = Get-SchemaKeyManifest -Schema $schema
+    $additions = @()
+    $obsoleteFound = @()
+    $modified = $false
+
+    foreach ($entry in $manifest) {
+        $look = Get-LiveValueAtPath -Config $live -Path $entry.Path
+        if ($entry.IsObsolete) {
+            if ($look.Exists) {
+                $obsoleteFound += $entry
+                if ($Mode -eq 'Review') {
+                    $reply = Read-Host "  Remove obsolete key '$($entry.Path)' (no longer used as of v$($entry.ObsoleteSince))? [Y/N]"
+                    if ($reply -match '^[Yy]') {
+                        if (Remove-LiveValueAtPath -Config $live -Path $entry.Path) {
+                            $modified = $true
+                            Write-Ok "  - Removed obsolete: $($entry.Path)"
+                        }
+                    }
+                } else {
+                    # Merge mode: report only, never remove (D-11 safe default)
+                    Write-Warn "Obsolete: $($entry.Path) - no longer used as of v$($entry.ObsoleteSince). Safe to remove."
+                }
+            }
+            continue
+        }
+        if (-not $look.Exists) {
+            if (-not $entry.HasDefault) {
+                # No default in schema -> can't auto-add; warn so operator knows.
+                Write-Warn "Missing key '$($entry.Path)' has no default in schema; not added (operator must set manually)."
+                continue
+            }
+            if ($Mode -eq 'Review') {
+                $defaultDisplay = if ($entry.Default -is [array]) { '[' + (($entry.Default | ForEach-Object { "`"$_`"" }) -join ',') + ']' } else { "$($entry.Default)" }
+                $reply = Read-Host "  Add '$($entry.Path)' with default = $defaultDisplay? [Y/N] [Y]"
+                if ($reply -and $reply -notmatch '^[Yy]' -and $reply -notmatch '^$') { continue }
+            }
+            try {
+                if (Set-LiveValueAtPath -Config $live -Path $entry.Path -Value $entry.Default) {
+                    $modified = $true
+                    $additions += $entry
+                    Write-Ok "  + $($entry.Path) = $($entry.Default)"
+                }
+            } catch {
+                Write-Warn "Could not add '$($entry.Path)': $($_.Exception.Message)"
+            }
+        }
+    }
+
+    if ($modified) {
+        $live | ConvertTo-Json -Depth 32 | Set-Content -Path $ConfigPath -Encoding UTF8 -NoNewline
+        Write-Ok "Wrote $($additions.Count) addition(s) to $ConfigPath"
+    } else {
+        Write-Ok 'Config is in sync with schema; no changes written.'
+    }
+
+    if ($obsoleteFound.Count -gt 0 -and $Mode -eq 'Merge') {
+        Write-Warn "$($obsoleteFound.Count) obsolete key(s) reported above. Re-run with -ConfigSync Review to remove interactively."
+    }
+}
+
 # ─── 1. Prerequisites ─────────────────────────────────────────────────────────
 
 Write-Step 'Checking prerequisites'
@@ -833,48 +1027,20 @@ catch {
     }
 }
 
-# ─── 9b. Config schema drift detection ────────────────────────────────────────
-# After a successful upgrade, compare keys in the incoming template against the
-# live production config. New keys from the template are reported so operators
-# know what to add — no auto-merge (risky with nested/array values).
+# ─── 9b. Config sync (schema-driven additive merge — plan 08-05 / STAB-010) ───
+# Walks appsettings.schema.json, adds any missing keys to the operator's live
+# appsettings.Production.json using schema defaults. NEVER modifies existing
+# values (D-13). Arrays atomic (D-14). Obsolete keys reported (Merge) or
+# prompted (Review). $ConfigSync was resolved earlier in the script (Merge /
+# Review / None) based on -ConfigSync param, -Force, or interactive prompt.
 
 if ($siteExists -and (Test-Path $prodConfig)) {
-    $templateFile = Join-Path $PhysicalPath 'appsettings.Production.template.json'
-    if (Test-Path $templateFile) {
-        try {
-            $templateJson = Get-Content $templateFile -Raw | ConvertFrom-Json
-            $liveJson     = Get-Content $prodConfig   -Raw | ConvertFrom-Json
-
-            function Get-JsonKeyPaths {
-                param($Node, [string]$Prefix = '')
-                $paths = @()
-                if ($null -ne $Node -and $Node -is [PSCustomObject]) {
-                    foreach ($prop in $Node.PSObject.Properties) {
-                        $path = if ($Prefix) { "$Prefix.$($prop.Name)" } else { $prop.Name }
-                        $paths += $path
-                        if ($prop.Value -is [PSCustomObject]) {
-                            $paths += Get-JsonKeyPaths -Node $prop.Value -Prefix $path
-                        }
-                    }
-                }
-                return $paths
-            }
-
-            $templateKeys = Get-JsonKeyPaths -Node $templateJson
-            $liveKeys     = Get-JsonKeyPaths -Node $liveJson
-            $newKeys      = $templateKeys | Where-Object { $liveKeys -notcontains $_ }
-
-            if ($newKeys) {
-                Write-Host ''
-                Write-Warn 'Config schema drift detected — new keys in template not present in live config:'
-                foreach ($k in $newKeys) { Write-Host "    + $k" -ForegroundColor Yellow }
-                Write-Host '    Review appsettings.Production.template.json and add any required keys to' -ForegroundColor Yellow
-                Write-Host "    $prodConfig manually." -ForegroundColor Yellow
-            }
-        } catch {
-            Write-Warn "Config schema drift check skipped: $($_.Exception.Message)"
-        }
-    }
+    Write-Step 'Syncing appsettings.Production.json against schema'
+    $schemaFile = Join-Path $PhysicalPath 'appsettings.schema.json'
+    Sync-AppSettingsAgainstSchema `
+        -SchemaPath $schemaFile `
+        -ConfigPath $prodConfig `
+        -Mode $ConfigSync
 }
 
 # ─── Done ─────────────────────────────────────────────────────────────────────
