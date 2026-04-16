@@ -30,7 +30,7 @@ Source: 21 open GitHub issues (#19–#39) opened 2026-04-16. These must ship bef
 - [ ] **STAB-009** (gh#25): Pre-flight configuration validation runs at install/startup — fails fast with actionable errors when `appsettings.Production.json` is structurally invalid or internally inconsistent.
 - [x] **STAB-010** (gh#24): Upgrade syncs `appsettings.Production.json` against current schema — adds missing keys with documented defaults, flags obsolete keys, never silently destroys operator overrides.
 - [ ] **STAB-011** (gh#26): Upgrade exposes explicit controls (flag and/or interactive prompt) governing config-sync behavior — operators choose between manual review, auto-merge-additions, or full sync.
-- [ ] **STAB-012** (gh#37): Upgrade schema-drift check must succeed even when `appsettings.Production.json` contains comment blocks (depends on STAB-007 fix or comment-tolerant parser).
+- [x] **STAB-012** (gh#37): Upgrade schema-drift check must succeed even when `appsettings.Production.json` contains comment blocks (depends on STAB-007 fix or comment-tolerant parser).
 
 ### Security Hardening (Phase 9)
 
