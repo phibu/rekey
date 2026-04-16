@@ -61,7 +61,7 @@ Source: 21 GitHub issues (#19–#39) opened 2026-04-16. Must ship before v2.0 wo
   6. Schema-drift check no longer skips when config is otherwise structurally valid (gh#37)
 **Plans**: 8 plans
   - [x] 08-01-PLAN.md — Strip template comments + create authoritative JSON Schema (STAB-007, STAB-008)
-  - [ ] 08-02-PLAN.md — CI Test-Json validation step (STAB-008 enforcement)
+  - [x] 08-02-PLAN.md — CI Test-Json validation step (STAB-008 enforcement)
   - [ ] 08-03-PLAN.md — IValidateOptions<T> validators + Program.cs ValidateOnStart + Event Log fail-fast (STAB-009)
   - [ ] 08-04-PLAN.md — Installer pre-flight Test-Json + -ConfigSync param + Event Log source registration (STAB-009, STAB-011)
   - [ ] 08-05-PLAN.md — Installer additive-merge sync (schema-driven, arrays atomic, never modify existing) (STAB-010)
