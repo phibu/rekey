@@ -570,7 +570,18 @@ $hostHeader = $env:COMPUTERNAME
 if (-not $siteExists) {
     Write-Ok "PassReset reachable at http://${hostHeader}:${selectedHttpPort}/"
 } else {
-    Write-Ok "PassReset reachable at http://${hostHeader}:${HttpPort}/ (HTTP binding retained from previous install)"
+    # WR-02: read the actual HTTP binding(s) from IIS — previous installs on
+    # alternate ports (e.g. 8081) must not be mis-announced as :$HttpPort.
+    $httpBindings = @(Get-WebBinding -Name $SiteName -Protocol http -ErrorAction SilentlyContinue)
+    if ($httpBindings.Count -gt 0) {
+        foreach ($b in $httpBindings) {
+            # bindingInformation is "*:port:host"
+            $port = ($b.bindingInformation -split ':')[1]
+            Write-Ok "PassReset reachable at http://${hostHeader}:${port}/ (HTTP binding retained from previous install)"
+        }
+    } else {
+        Write-Ok 'PassReset upgrade complete — no HTTP binding present (HTTPS-only mode)'
+    }
 }
 if ($CertThumbprint) {
     Write-Ok "PassReset reachable at https://${hostHeader}:${HttpsPort}/ (HTTPS binding configured)"
