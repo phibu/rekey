@@ -31,6 +31,28 @@ jobs:
       - name: Restore .NET dependencies
         run: dotnet restore src/PassReset.sln
 
+      - name: Validate appsettings.Production.template.json against schema
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $errors = @()
+          try {
+            $valid = Test-Json `
+              -Path 'src/PassReset.Web/appsettings.Production.template.json' `
+              -SchemaFile 'src/PassReset.Web/appsettings.schema.json' `
+              -ErrorVariable errors `
+              -ErrorAction SilentlyContinue
+          } catch {
+            $valid = $false
+            $errors = @($_.Exception.Message)
+          }
+          if (-not $valid) {
+            Write-Host '::error::Schema validation failed for appsettings.Production.template.json'
+            foreach ($e in $errors) { Write-Host "::error::$e" }
+            exit 1
+          }
+          Write-Host 'Schema validation passed.'
+
       - name: Build solution
         run: dotnet build src/PassReset.sln --no-restore --configuration Release
 
