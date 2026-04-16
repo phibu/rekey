@@ -1,4 +1,5 @@
 ﻿#Requires -RunAsAdministrator
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Installs PassReset on IIS (Windows Server 2019 / 2022 / 2025, IIS 10).
@@ -89,6 +90,9 @@ param(
     [SecureString] $LdapPassword        = $null,
     [SecureString] $SmtpPassword        = $null,
     [SecureString] $RecaptchaPrivateKey  = $null,
+
+    [ValidateSet('Merge','Review','None')]
+    [string] $ConfigSync = '',   # empty -> resolved post-upgrade-detection: prompt if interactive, 'Merge' if -Force, 'None' if fresh install
 
     [switch] $Force
 )
@@ -210,6 +214,23 @@ if (-not ($installedRuntime -match '^10\.')) {
     exit 0
 }
 Write-Ok ".NET Hosting Bundle $installedRuntime detected"
+
+# Windows Event Log source (D-07 runtime half from plan 08-03).
+# Registered by the installer once on fresh install so that the ASP.NET Core host's
+# EventLog.WriteEntry("PassReset", ...) calls at startup actually surface in Event Viewer.
+Write-Step 'Ensuring Windows Event Log source PassReset is registered'
+try {
+    if (-not [System.Diagnostics.EventLog]::SourceExists('PassReset')) {
+        New-EventLog -LogName Application -Source PassReset -ErrorAction Stop
+        Write-Ok "Registered Event Log source 'PassReset' under 'Application' log"
+    } else {
+        Write-Ok "Event Log source 'PassReset' already registered"
+    }
+} catch {
+    Write-Warn "Could not register Event Log source 'PassReset': $($_.Exception.Message)"
+    Write-Warn 'Startup validation failures will not appear in Event Viewer until source is registered.'
+    # Do NOT Abort — install can proceed; runtime EventLog.WriteEntry will silently swallow.
+}
 
 # ─── 2. Resolve publish folder ────────────────────────────────────────────────
 
@@ -373,6 +394,66 @@ if (-not $isReconfigure) {
     Write-Ok 'Files copied (preserved: appsettings.Production.json, appsettings.Local.json, logs\)'
 } else {
     Write-Ok 'Reconfigure mode - skipping file mirror; existing publish folder preserved'
+}
+
+# ─── Pre-flight: validate live appsettings.Production.json against schema (D-05) ───
+# Runs on upgrade ONLY (fresh installs have no live config yet). Halts install
+# before any sync work in plan 08-05 so invalid configs never get auto-merged.
+# STAB-009 install-time half; the runtime half is enforced at startup (plan 08-03).
+$prodConfig = Join-Path $PhysicalPath 'appsettings.Production.json'
+
+if ($siteExists -and (Test-Path $prodConfig)) {
+    Write-Step 'Validating appsettings.Production.json against schema (pre-flight)'
+
+    $schemaFile = Join-Path $PhysicalPath 'appsettings.schema.json'
+    if (-not (Test-Path $schemaFile)) {
+        Write-Warn "appsettings.schema.json not found at $schemaFile - skipping pre-flight validation."
+        Write-Warn 'This release was built without the schema. Pre-flight will not catch invalid config.'
+    } else {
+        $validationErrors = @()
+        try {
+            $valid = Test-Json `
+                -Path $prodConfig `
+                -SchemaFile $schemaFile `
+                -ErrorVariable validationErrors `
+                -ErrorAction SilentlyContinue
+        } catch {
+            $valid = $false
+            $validationErrors = @($_.Exception.Message)
+        }
+        if (-not $valid) {
+            $errorDetail = ($validationErrors | ForEach-Object { "    $_" }) -join "`n"
+            Abort "appsettings.Production.json failed schema validation:`n$errorDetail`n  Edit $prodConfig and re-run Install-PassReset.ps1."
+        }
+        Write-Ok 'appsettings.Production.json conforms to schema'
+    }
+}
+
+# ─── Resolve config sync mode (STAB-011 / D-12, D-13) ──────────────────────────
+# Runs AFTER robocopy (so template is present on upgrade path) and BEFORE any
+# sync work. The resolved $ConfigSync value drives the additive-merge sync in
+# plan 08-05 and the drift-check rewrite in plan 08-06.
+
+Write-Step 'Resolving config sync mode'
+if (-not $ConfigSync) {
+    if ($Force) {
+        $ConfigSync = 'Merge'
+        Write-Ok "-Force specified - defaulting to -ConfigSync Merge"
+    } elseif ($siteExists) {
+        # Upgrade detected, interactive session — prompt per D-13.
+        $reply = Read-Host '  Config sync: [M]erge additions / [R]eview each / [S]kip? [M]'
+        $ConfigSync = switch -Regex ($reply) {
+            '^[Rr]' { 'Review' }
+            '^[Ss]' { 'None' }
+            default { 'Merge' }
+        }
+        Write-Ok "Config sync mode: $ConfigSync"
+    } else {
+        # Fresh install — template was just copied verbatim; nothing to sync.
+        $ConfigSync = 'None'
+    }
+} else {
+    Write-Ok "Config sync mode (from -ConfigSync param): $ConfigSync"
 }
 
 # ─── 4. App pool ──────────────────────────────────────────────────────────────
