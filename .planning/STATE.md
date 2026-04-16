@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Multi-OS PoC
-status: planning
-last_updated: "2026-04-16T18:47:44.024Z"
+status: executing
+last_updated: "2026-04-16T20:39:51.586Z"
 progress:
   total_phases: 7
   completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
-  percent: 100
+  total_plans: 12
+  completed_plans: 5
+  percent: 42
 ---
 
 # PassReset — Project State
@@ -24,17 +24,19 @@ progress:
 - **Current milestone:** v1.4.0 (Stabilization) — queued
 - **Queued milestone:** v2.0.0 (Platform evolution)
 - **Milestone chain:** v1.2.3 ✅ → v1.3.0 ✅ → v1.3.1 ✅ → v1.3.2 ✅ → v1.4.0 (active) → v2.0.0 (queued)
-- **Current focus:** Phase 7 (Installer & Deployment Fixes) — next to shape
+- **Current focus:** Phase 08 — config-schema-sync
 
 ## Current Position
 
+Phase: 08 (config-schema-sync) — EXECUTING
+Plan: 2 of 8
 Milestone: v1.4.0 — NOT STARTED
 Next: Phase 7 (Installer & Deployment Fixes) — needs `/gsd-discuss-phase 7` then `/gsd-plan-phase 7`
 
 - **Phase:** 08
 - **Next:** `/gsd-discuss-phase 7` to shape the installer fix approach
-- **Status:** Ready to plan
-- **Progress:** [░░░░░░░░░░] 0%
+- **Status:** Ready to execute
+- **Progress:** [████░░░░░░] 42%
 
 ## Milestone Map
 
@@ -68,6 +70,8 @@ Next: Phase 7 (Installer & Deployment Fixes) — needs `/gsd-discuss-phase 7` th
 - **2026-04-16:** v1.3.2 cut as a code-review-fix patch rollup on top of v1.3.1 (WR-01/WR-02/WR-03); no new phase created
 - **2026-04-16:** Insert v1.4.0 stabilization milestone before v2.0 — 21 GitHub issues opened against v1.3.2 represent install/security regressions
 - **2026-04-16:** STAB-017 (env-var secrets) is a stepping stone, not the full V2-003 — env vars unblock production now without committing to the v2.0 DPAPI/Key Vault decision
+- **2026-04-16 (Phase 08-01):** appsettings.schema.json uses a live `x-passreset-obsolete` marker on a legacy Recaptcha key (rather than `$comment`-only convention) so the installer sync code in 08-05/06 has an executable test case for the obsolete-key prompt path
+- **2026-04-16 (Phase 08-01):** csproj uses `<Content Update>` (not `<Content Include>`) to ship the schema + template; ASP.NET Core Web SDK auto-includes JSON as Content, so `Include` triggers `NETSDK1022` duplicate-item errors
 
 ### Active TODOs
 
@@ -94,3 +98,4 @@ Next: Phase 7 (Installer & Deployment Fixes) — needs `/gsd-discuss-phase 7` th
 - **Previous session (2026-04-16, earlier):** Cut v1.3.2 patch rolling up post-v1.3.1 review fixes. Rolled STATE.md to v2.0.0 queued.
 - **This session (2026-04-16):** 21 GitHub issues (#19–#39) opened against v1.3.2. Inserted v1.4.0 stabilization milestone before v2.0. Created STAB-001..021 requirements, phases 7–10, renumbered v2.0 phases 4/5/6 → 11/12/13.
 - **Next session:** `/gsd-discuss-phase 7` to start Installer & Deployment Fixes. Phases 7/8/9 are parallelizable.
+- **2026-04-16 (later):** Executed Phase 08-01 — pure-JSON production template, authoritative `appsettings.schema.json` (Draft 2020-12), csproj Content wiring. Commits: e81b839, fcd704b, b9deb9d. STAB-007 + STAB-008 ✓.

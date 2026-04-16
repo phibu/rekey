@@ -59,7 +59,15 @@ Source: 21 GitHub issues (#19–#39) opened 2026-04-16. Must ship before v2.0 wo
   4. Upgrade syncs config against the schema — adds missing keys, flags obsolete keys, never destroys overrides (gh#24)
   5. Upgrade exposes explicit controls (flag/prompt) over sync behavior (gh#26)
   6. Schema-drift check no longer skips when config is otherwise structurally valid (gh#37)
-**Plans**: TBD
+**Plans**: 8 plans
+  - [x] 08-01-PLAN.md — Strip template comments + create authoritative JSON Schema (STAB-007, STAB-008)
+  - [ ] 08-02-PLAN.md — CI Test-Json validation step (STAB-008 enforcement)
+  - [ ] 08-03-PLAN.md — IValidateOptions<T> validators + Program.cs ValidateOnStart + Event Log fail-fast (STAB-009)
+  - [ ] 08-04-PLAN.md — Installer pre-flight Test-Json + -ConfigSync param + Event Log source registration (STAB-009, STAB-011)
+  - [ ] 08-05-PLAN.md — Installer additive-merge sync (schema-driven, arrays atomic, never modify existing) (STAB-010)
+  - [ ] 08-06-PLAN.md — Installer schema-drift check rewritten (always runs on upgrade) (STAB-012)
+  - [ ] 08-07-PLAN.md — Publish-PassReset.ps1 ships schema in release zip + pre-publish Test-Json (STAB-008)
+  - [ ] 08-08-PLAN.md — Operator docs + CHANGELOG (STAB-007..012)
 
 ### Phase 9: Security Hardening
 **Goal**: Production deployments resist account enumeration, enforce rate-limit + reCAPTCHA, ship structured audit events, and route credentials through env vars instead of plaintext config
@@ -155,7 +163,7 @@ Source: 21 GitHub issues (#19–#39) opened 2026-04-16. Must ship before v2.0 wo
 | Phase | Milestone | Plans Complete | Status | Completed |
 |---|---|---|---|---|
 | 7. Installer & Deployment Fixes | v1.4.0 | 0/0 | Not started | — |
-| 8. Configuration Schema & Sync | v1.4.0 | 0/0 | Not started | — |
+| 8. Configuration Schema & Sync | v1.4.0 | 0/8 | Planned | — |
 | 9. Security Hardening | v1.4.0 | 0/0 | Not started | — |
 | 10. Operational Readiness | v1.4.0 | 0/0 | Not started | — |
 | 11. v2.0 Multi-OS PoC | v2.0.0 | 0/0 | Queued | — |
@@ -170,4 +178,4 @@ Source: 21 GitHub issues (#19–#39) opened 2026-04-16. Must ship before v2.0 wo
 - Orphans: **0**
 
 ---
-*Last updated: 2026-04-16 (inserted v1.4.0 stabilization milestone for 21 GitHub issues; renumbered v2.0 phases 4/5/6 → 11/12/13)*
+*Last updated: 2026-04-16 (Phase 8 planned: 8 plans across 5 waves covering STAB-007..012)*
