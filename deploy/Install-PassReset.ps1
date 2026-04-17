@@ -157,8 +157,8 @@ function Get-SchemaKeyManifest {
                 Path           = $path
                 Default        = if ($node.PSObject.Properties.Name -contains 'default') { $node.default } else { $null }
                 HasDefault     = ($node.PSObject.Properties.Name -contains 'default')
-                IsObsolete     = ($node.'x-passreset-obsolete' -eq $true)
-                ObsoleteSince  = $node.'x-passreset-obsolete-since'
+                IsObsolete     = (($node.PSObject.Properties.Name -contains 'x-passreset-obsolete') -and ($node.'x-passreset-obsolete' -eq $true))
+                ObsoleteSince  = if ($node.PSObject.Properties.Name -contains 'x-passreset-obsolete-since') { $node.'x-passreset-obsolete-since' } else { $null }
                 Type           = $node.type
             }
         }
