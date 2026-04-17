@@ -31,6 +31,40 @@ public static class SiemSyslogFormatter
     }
 
     /// <summary>
+    /// STAB-015: RFC 5424 STRUCTURED-DATA emission for the <see cref="AuditEvent"/> DTO.
+    /// Emits a single SD-ELEMENT with the configured SD-ID and SD-PARAMs
+    /// <c>event</c>, <c>outcome</c>, <c>user</c>, and (when non-null) <c>ip</c>, <c>traceId</c>, <c>detail</c>.
+    /// All values are escaped via <see cref="EscapeSd"/>.
+    /// </summary>
+    public static string Format(
+        DateTimeOffset timestampUtc,
+        int facility,
+        int severity,
+        string hostname,
+        string appName,
+        string sdId,
+        AuditEvent evt)
+    {
+        var priority = (facility * 8) + severity;
+        var ts = timestampUtc.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ");
+
+        var sd = new System.Text.StringBuilder();
+        sd.Append('[').Append(sdId);
+        sd.Append(" event=\"").Append(EscapeSd(evt.EventType.ToString())).Append('"');
+        sd.Append(" outcome=\"").Append(EscapeSd(evt.Outcome)).Append('"');
+        sd.Append(" user=\"").Append(EscapeSd(evt.Username)).Append('"');
+        if (!string.IsNullOrEmpty(evt.ClientIp))
+            sd.Append(" ip=\"").Append(EscapeSd(evt.ClientIp)).Append('"');
+        if (!string.IsNullOrEmpty(evt.TraceId))
+            sd.Append(" traceId=\"").Append(EscapeSd(evt.TraceId)).Append('"');
+        if (!string.IsNullOrEmpty(evt.Detail))
+            sd.Append(" detail=\"").Append(EscapeSd(evt.Detail)).Append('"');
+        sd.Append(']');
+
+        return $"<{priority}>1 {ts} {hostname} {appName} - - - {sd}";
+    }
+
+    /// <summary>
     /// Escapes RFC 5424 SD-PARAM special characters (backslash, double-quote, closing bracket)
     /// and strips control characters (U+0000–U+001F, U+007F) to prevent syslog injection.
     /// </summary>

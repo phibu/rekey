@@ -90,4 +90,101 @@ public class SiemSyslogFormatterTests
 
         Assert.Equal(first, second);
     }
+
+    // ─── STAB-015: AuditEvent + configurable SD-ID overload ───────────────────
+
+    [Fact]
+    public void Format_WithAuditEvent_EmitsEventOutcomeUserSdParams()
+    {
+        var evt = new AuditEvent(
+            SiemEventType.PasswordChanged,
+            Outcome: "Success",
+            Username: "alice",
+            ClientIp: "10.0.0.5",
+            TraceId: "abc123",
+            Detail: null);
+
+        var line = SiemSyslogFormatter.Format(
+            FixedTs, facility: 10, severity: 6,
+            hostname: "HOST", appName: "PassReset",
+            sdId: "passreset@32473", evt: evt);
+
+        Assert.Contains(
+            "[passreset@32473 event=\"PasswordChanged\" outcome=\"Success\" user=\"alice\"",
+            line,
+            StringComparison.Ordinal);
+        Assert.Contains("ip=\"10.0.0.5\"", line, StringComparison.Ordinal);
+        Assert.Contains("traceId=\"abc123\"", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("detail=", line, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Format_WithAuditEvent_EmitsOptionalTraceIdAndIp()
+    {
+        var evt = new AuditEvent(
+            SiemEventType.Generic,
+            Outcome: "Success",
+            Username: "bob",
+            ClientIp: "192.168.1.2",
+            TraceId: "trace-xyz",
+            Detail: "ok");
+
+        var line = SiemSyslogFormatter.Format(
+            FixedTs, 10, 5, "h", "PassReset", "passreset@32473", evt);
+
+        Assert.Contains("ip=\"192.168.1.2\"", line, StringComparison.Ordinal);
+        Assert.Contains("traceId=\"trace-xyz\"", line, StringComparison.Ordinal);
+        Assert.Contains("detail=\"ok\"", line, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Format_WithConfigurableSdId_UsesSetting()
+    {
+        var evt = new AuditEvent(
+            SiemEventType.Generic,
+            Outcome: "Success",
+            Username: "carol");
+
+        var line = SiemSyslogFormatter.Format(
+            FixedTs, 10, 5, "h", "PassReset", "myorg@12345", evt);
+
+        Assert.Contains("[myorg@12345 event=\"Generic\"", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("passreset@32473", line, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Format_WithAuditEvent_EscapesQuotesBracketsBackslashInUsername()
+    {
+        var evt = new AuditEvent(
+            SiemEventType.Generic,
+            Outcome: "Fail",
+            Username: "a\"b]c\\d");
+
+        var line = SiemSyslogFormatter.Format(
+            FixedTs, 10, 5, "h", "PassReset", "passreset@32473", evt);
+
+        // Must contain the escaped sequences, not the raw characters within the SD-PARAM value.
+        Assert.Contains("user=\"a\\\"b\\]c\\\\d\"", line, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Format_WithAuditEvent_OmitsNullOptionalSdParams()
+    {
+        var evt = new AuditEvent(
+            SiemEventType.Generic,
+            Outcome: "Fail",
+            Username: "bob",
+            ClientIp: null,
+            TraceId: null,
+            Detail: null);
+
+        var line = SiemSyslogFormatter.Format(
+            FixedTs, 10, 5, "h", "PassReset", "passreset@32473", evt);
+
+        Assert.DoesNotContain("ip=", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("traceId=", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("detail=", line, StringComparison.Ordinal);
+        Assert.Contains("user=\"bob\"", line, StringComparison.Ordinal);
+        Assert.Contains("outcome=\"Fail\"", line, StringComparison.Ordinal);
+    }
 }
