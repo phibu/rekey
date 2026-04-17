@@ -38,6 +38,18 @@ public sealed class SiemSettingsValidator : IValidateOptions<SiemSettings>
                     "SiemSettings.Syslog.Protocol",
                     "must be 'UDP' or 'TCP'",
                     syslog.Protocol ?? ""));
+
+            // STAB-015 (D-20): SD-ID syntax per RFC 5424 §6.3.2 — 1-32 printusascii chars
+            // excluding '=', space, ']', '"'.
+            if (string.IsNullOrEmpty(syslog.SdId)
+                || syslog.SdId.Length > 32
+                || syslog.SdId.IndexOfAny([' ', '=', ']', '"']) >= 0)
+            {
+                failures.Add(Fmt(
+                    "SiemSettings.Syslog.SdId",
+                    "must be 1-32 RFC 5424 printusascii chars excluding '=', space, ']', '\"' (e.g. 'passreset@32473')",
+                    syslog.SdId ?? ""));
+            }
         }
 
         var alert = options.AlertEmail;

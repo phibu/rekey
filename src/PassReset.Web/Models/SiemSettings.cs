@@ -30,6 +30,15 @@ public class SyslogSettings
 
     /// <summary>APP-NAME field in the syslog header. Default: <c>PassReset</c>.</summary>
     public string AppName { get; set; } = "PassReset";
+
+    /// <summary>
+    /// STAB-015 (D-20): RFC 5424 SD-ID for the structured-data element emitted by
+    /// <see cref="PassReset.Web.Services.SiemSyslogFormatter"/>. Default uses IANA
+    /// reserved PEN 32473 (documentation/example). Operators with a registered
+    /// Private Enterprise Number can override in appsettings (e.g. "myorg@12345").
+    /// Must be 1-32 printusascii chars excluding '=', space, ']', '"' per RFC 5424 §6.3.2.
+    /// </summary>
+    public string SdId { get; set; } = "passreset@32473";
 }
 
 /// <summary>Email alert delivery for high-severity SIEM events.</summary>
