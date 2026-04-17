@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using PassReset.Common;
 using PassReset.PasswordProvider;
@@ -26,6 +27,7 @@ public sealed class PasswordController : ControllerBase
     private readonly PasswordPolicyCache _policyCache;
     private readonly IPwnedPasswordChecker _pwnedChecker;
     private readonly PasswordChangeOptions _passwordOptions;
+    private readonly IHostEnvironment _hostEnvironment;
     private readonly ILogger<PasswordController> _logger;
 
     // Pre-compiled 5-char hex regex for pwned-check prefix validation.
@@ -52,6 +54,7 @@ public sealed class PasswordController : ControllerBase
         PasswordPolicyCache policyCache,
         IPwnedPasswordChecker pwnedChecker,
         IOptions<PasswordChangeOptions> passwordOptions,
+        IHostEnvironment hostEnvironment,
         ILogger<PasswordController> logger)
     {
         _provider           = provider;
@@ -62,6 +65,7 @@ public sealed class PasswordController : ControllerBase
         _policyCache        = policyCache;
         _pwnedChecker       = pwnedChecker;
         _passwordOptions    = passwordOptions.Value;
+        _hostEnvironment    = hostEnvironment;
         _logger             = logger;
     }
 
@@ -193,7 +197,7 @@ public sealed class PasswordController : ControllerBase
             var siemType = MapErrorCodeToSiemEvent(error.ErrorCode);
             Audit($"Failed:{error.ErrorCode}", model.Username, clientIp, siemType, error.Message);
             var result = new ApiResult();
-            result.Errors.Add(error);
+            result.Errors.Add(RedactIfProduction(error));  // STAB-013 collapse
             return BadRequest(result);
         }
 
@@ -247,6 +251,20 @@ public sealed class PasswordController : ControllerBase
         ApiErrorCode.ChangeNotPermitted  => SiemEventType.ChangeNotPermitted,
         _                                => SiemEventType.Generic,
     };
+
+    /// <summary>STAB-013 D-01: account-enumeration codes that must collapse to Generic on the wire in Production.</summary>
+    private static bool IsAccountEnumerationCode(ApiErrorCode code) =>
+        code is ApiErrorCode.InvalidCredentials or ApiErrorCode.UserNotFound;
+
+    /// <summary>
+    /// STAB-013: In Production, replace InvalidCredentials/UserNotFound with Generic (0)
+    /// to resist account enumeration. SIEM path is NOT affected — granularity preserved
+    /// upstream by MapErrorCodeToSiemEvent + Audit() call (see D-05).
+    /// </summary>
+    private ApiErrorItem RedactIfProduction(ApiErrorItem err) =>
+        _hostEnvironment.IsProduction() && IsAccountEnumerationCode(err.ErrorCode)
+            ? new ApiErrorItem(ApiErrorCode.Generic, err.Message)
+            : err;
 
     private async Task<bool> ValidateRecaptchaAsync(
         string token, Recaptcha config, string clientIp)
