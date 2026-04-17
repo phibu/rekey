@@ -24,19 +24,18 @@ progress:
 - **Current milestone:** v1.4.0 (Stabilization) — active
 - **Queued milestone:** v2.0.0 (Platform evolution)
 - **Milestone chain:** v1.2.3 ✅ → v1.3.0 ✅ → v1.3.1 ✅ → v1.3.2 ✅ → v1.4.0 (active) → v2.0.0 (queued)
-- **Current focus:** Phase 09 — security-hardening ✅ complete (human-verify pending)
+- **Current focus:** Phase 10 — operational-readiness (not started)
 
 ## Current Position
 
-Phase: 09 (security-hardening) — COMPLETE (awaiting human-verify on 09-05 docs)
-Plan: 5 of 5 complete
-Milestone: v1.4.0 — in progress
-Next: Phase 7 (Installer & Deployment Fixes) — needs `/gsd-discuss-phase 7` then `/gsd-plan-phase 7`
+Phase: 10 (operational-readiness) — NOT STARTED
+Milestone: v1.4.0 — 3/4 phases complete (7 ✓, 8 ✓, 9 ✓)
+Next: Phase 10 (Operational Readiness, STAB-018..021) — needs `/gsd-discuss-phase 10` then `/gsd-plan-phase 10`
 
-- **Phase:** 09 ✅ (human-verify checkpoint open on 09-05 docs)
-- **Next:** `/gsd-discuss-phase 7` to shape the installer fix approach
-- **Status:** Phase 9 commits landed; operator should review doc wording in 09-05 artifacts
-- **Progress:** [██████████] 100% (Wave 1 + Wave 2)
+- **Phase:** 10 (not started)
+- **Next:** `/gsd-discuss-phase 10` to shape the operational-readiness approach
+- **Status:** Phases 7/8/9 all executed with SUMMARY/REVIEW/FIX artifacts. Phase 7 human UAT has 5 operator items explicitly deferred by user (physical IIS host unavailable). Phase 9 has an open human-verify checkpoint on 09-05 doc wording.
+- **Progress:** v1.4.0 milestone [███████░░░] 75% (3 of 4 phases complete)
 
 ## Milestone Map
 
@@ -46,7 +45,7 @@ Next: Phase 7 (Installer & Deployment Fixes) — needs `/gsd-discuss-phase 7` th
 | v1.3.0 | 02, 03 | ✅ Shipped 2026-04-15 (archived) |
 | v1.3.1 | 07 (legacy) | ✅ Shipped 2026-04-15 (archived) |
 | v1.3.2 | 07 (code review fix rollup) | ✅ Shipped 2026-04-16 (archived) |
-| v1.4.0 | 7, 8, 9, 10 | Queued — 0/4 phases started |
+| v1.4.0 | 7 ✓, 8 ✓, 9 ✓, 10 pending | Active — 3/4 phases complete |
 | v2.0.0 | 11, 12, 13 | Queued — 0/3 phases started |
 
 > Note: legacy phase 07 numbering belongs to the archived v1.3.1/v1.3.2 milestones. The v1.4.0 chain restarts the active phase numbering at 7 going forward; archived directories are not affected.
@@ -75,11 +74,12 @@ Next: Phase 7 (Installer & Deployment Fixes) — needs `/gsd-discuss-phase 7` th
 
 ### Active TODOs
 
-- `/gsd-discuss-phase 7` — shape the installer fix approach (STAB-001..006)
-- `/gsd-plan-phase 7` — produce plans under Phase 7
-- Phases 7, 8, 9 can run in parallel — coordinate appsettings touch points
-- Phase 10 sequences after 7+8+9 land
-- Triage Dependabot branches before/during v1.4.0 work
+- `/gsd-discuss-phase 10` — shape the operational-readiness approach (STAB-018..021)
+- `/gsd-plan-phase 10` — produce plans under Phase 10
+- Phase 7 human UAT (5 operator items) — needs physical IIS host when available
+- Phase 9 human-verify — operator review of 09-05 doc wording before v1.4.0 tag
+- Phase 9 — 7 Info-level findings remain in 09-REVIEW.md (backlog)
+- Triage Dependabot branches before cutting v1.4.0
 - After v1.4.0 ships → `/gsd-discuss-phase 11` for v2.0 Multi-OS PoC
 
 ### Blockers
