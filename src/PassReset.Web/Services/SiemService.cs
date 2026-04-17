@@ -86,12 +86,14 @@ internal sealed class SiemService : ISiemService, IDisposable
             var hostname = Dns.GetHostName();
 
             // RFC 5424 formatting delegated to pure static helper (testable without sockets).
+            // WR-01: pass configured SdId so operators can override the default (passreset@32473).
             var message = SiemSyslogFormatter.Format(
                 timestampUtc: DateTimeOffset.UtcNow,
                 facility:     syslog.Facility,
                 severity:     severity,
                 hostname:     hostname,
                 appName:      syslog.AppName,
+                sdId:         syslog.SdId,
                 eventType:    eventType.ToString(),
                 username:     username,
                 ipAddress:    ipAddress,

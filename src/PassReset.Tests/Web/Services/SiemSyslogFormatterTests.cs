@@ -14,6 +14,7 @@ public class SiemSyslogFormatterTests
         var line = SiemSyslogFormatter.Format(
             FixedTs, facility: 1, severity: 4,
             hostname: "host", appName: "PassReset",
+            sdId: "passreset@32473",
             eventType: "InvalidCredentials",
             username: "alice", ipAddress: "10.0.0.1", detail: null);
 
@@ -30,6 +31,7 @@ public class SiemSyslogFormatterTests
         var line = SiemSyslogFormatter.Format(
             FixedTs, facility: 1, severity: 5,
             hostname: "h", appName: "PassReset",
+            sdId: "passreset@32473",
             eventType: "Generic",
             username: "u", ipAddress: "i",
             detail: "something happened");
@@ -47,6 +49,7 @@ public class SiemSyslogFormatterTests
         var line = SiemSyslogFormatter.Format(
             FixedTs, facility, severity,
             hostname: "h", appName: "a",
+            sdId: "passreset@32473",
             eventType: "Generic", username: "u", ipAddress: "i", detail: null);
 
         Assert.StartsWith($"<{expectedPri}>1 ", line, StringComparison.Ordinal);
@@ -73,7 +76,7 @@ public class SiemSyslogFormatterTests
     public void Format_UserWithInjectedClosingBracketIsEscaped()
     {
         var line = SiemSyslogFormatter.Format(
-            FixedTs, 1, 5, "h", "a", "Generic",
+            FixedTs, 1, 5, "h", "a", sdId: "passreset@32473", eventType: "Generic",
             username: "evil]injected", ipAddress: "i", detail: null);
 
         // The closing bracket must have been escaped so it cannot terminate the SD element early.
@@ -84,11 +87,26 @@ public class SiemSyslogFormatterTests
     public void Format_IsDeterministicForFixedInputs()
     {
         var first = SiemSyslogFormatter.Format(
-            FixedTs, 1, 5, "host", "PassReset", "PasswordChanged", "alice", "10.0.0.1", null);
+            FixedTs, 1, 5, "host", "PassReset", "passreset@32473", "PasswordChanged", "alice", "10.0.0.1", null);
         var second = SiemSyslogFormatter.Format(
-            FixedTs, 1, 5, "host", "PassReset", "PasswordChanged", "alice", "10.0.0.1", null);
+            FixedTs, 1, 5, "host", "PassReset", "passreset@32473", "PasswordChanged", "alice", "10.0.0.1", null);
 
         Assert.Equal(first, second);
+    }
+
+    // WR-01 regression guard — legacy overload must honor the configured SdId.
+    [Fact]
+    public void Format_LegacyOverload_HonorsConfiguredSdId()
+    {
+        var line = SiemSyslogFormatter.Format(
+            FixedTs, facility: 1, severity: 5,
+            hostname: "h", appName: "PassReset",
+            sdId: "myorg@54321",
+            eventType: "InvalidCredentials",
+            username: "alice", ipAddress: "10.0.0.1", detail: null);
+
+        Assert.Contains("[myorg@54321 event=\"InvalidCredentials\"", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("PassReset@0", line, StringComparison.Ordinal);
     }
 
     // ─── STAB-015: AuditEvent + configurable SD-ID overload ───────────────────

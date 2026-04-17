@@ -9,7 +9,9 @@ public static class SiemSyslogFormatter
 {
     /// <summary>
     /// Builds an RFC 5424 syslog line using the PassReset structured-data shape
-    /// used by <see cref="SiemService"/>.
+    /// used by <see cref="SiemService"/>. The SD-ID is sourced from
+    /// <c>SiemSettings.Syslog.SdId</c> so operators can override the default
+    /// <c>passreset@32473</c> (WR-01: previously hard-coded to <c>PassReset@0</c>).
     /// </summary>
     public static string Format(
         DateTimeOffset timestampUtc,
@@ -17,6 +19,7 @@ public static class SiemSyslogFormatter
         int severity,
         string hostname,
         string appName,
+        string sdId,
         string eventType,
         string username,
         string ipAddress,
@@ -27,7 +30,7 @@ public static class SiemSyslogFormatter
         var detailPart = detail != null ? $" detail=\"{EscapeSd(detail)}\"" : string.Empty;
 
         return $"<{priority}>1 {ts} {hostname} {appName} - - - " +
-               $"[PassReset@0 event=\"{eventType}\" user=\"{EscapeSd(username)}\" ip=\"{EscapeSd(ipAddress)}\"{detailPart}]";
+               $"[{sdId} event=\"{eventType}\" user=\"{EscapeSd(username)}\" ip=\"{EscapeSd(ipAddress)}\"{detailPart}]";
     }
 
     /// <summary>
