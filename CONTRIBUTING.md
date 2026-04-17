@@ -1,5 +1,20 @@
 # Contributing to PassReset
 
+## Developer Setup — Secrets via `dotnet user-secrets` (STAB-017)
+
+In Development, do not put SMTP passwords, LDAP service-account passwords, or reCAPTCHA private keys into `appsettings.Development.json` — that file is committed to git. Use `dotnet user-secrets` instead; values are stored outside the repo tree and bound via ASP.NET Core's default configuration pipeline.
+
+```bash
+cd src/PassReset.Web
+dotnet user-secrets init
+dotnet user-secrets set "SmtpSettings:Password" "dev-pass"
+dotnet user-secrets set "ClientSettings:Recaptcha:PrivateKey" "test-key"
+dotnet user-secrets list
+dotnet user-secrets remove "SmtpSettings:Password"
+```
+
+The `__` double-underscore env-var convention also works (`SmtpSettings__Password`, `ClientSettings__Recaptcha__PrivateKey`) — see `docs/Secret-Management.md` for the full matrix and the operator-side `appcmd` snippet.
+
 ## Commit Convention
 
 This project uses [Conventional Commits](https://www.conventionalcommits.org/).

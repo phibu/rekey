@@ -22,6 +22,8 @@ This document lists known constraints and design trade-offs in PassReset. These 
 
 - **No passwordless authentication**: Users must know their current password to change it. If a user has forgotten their password entirely, they need helpdesk assistance.
 
+- **STAB-013 wire-vs-SIEM divergence**: In Production, the API collapses `InvalidCredentials` and `UserNotFound` error responses to `ApiErrorCode.Generic` (0) on the wire to resist account-enumeration. SIEM events retain the granular distinction (`MapErrorCodeToSiemEvent` is unchanged) so SOC operators can still triage the two failure modes from syslog alone. In Development/Test environments, specific codes are preserved for debugging (D-03).
+
 ## Password Policy
 
 - **Fine-Grained Password Policies (FGPP/PSO)**: The portal reads `minPwdLength` and `minPwdAge` from the domain-level Default Domain Policy. If the organization uses Fine-Grained Password Policies (Password Settings Objects), the domain-level values may not match the effective policy for a specific user. AD itself enforces the correct policy during `ChangePassword()`, so the portal will still reject non-compliant passwords — but the pre-validation message may reference the wrong minimum length.

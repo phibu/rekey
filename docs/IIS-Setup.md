@@ -405,4 +405,38 @@ Certificates must be renewed before expiry. After renewal:
 
 ---
 
+## Environment Variables for Secrets (STAB-017)
+
+PassReset binds configuration from environment variables via ASP.NET Core's default `__` path delimiter. Operators may inject the three in-scope secrets — `SmtpSettings.Password`, `PasswordChangeOptions.ServiceAccountPassword`, `ClientSettings.Recaptcha.PrivateKey` — via AppPool-scoped environment variables instead of writing them to `appsettings.Production.json`.
+
+**Set a secret via `appcmd.exe`** (full path: `%systemroot%\system32\inetsrv\appcmd.exe`):
+```powershell
+& "$env:windir\system32\inetsrv\appcmd.exe" set config `
+    -section:applicationPools `
+    "/[name='PassReset'].environmentVariables.[name='SmtpSettings__Password',value='<secret>']" `
+    /commit:apphost
+
+& "$env:windir\system32\inetsrv\appcmd.exe" set config `
+    -section:applicationPools `
+    "/[name='PassReset'].environmentVariables.[name='PasswordChangeOptions__ServiceAccountPassword',value='<secret>']" `
+    /commit:apphost
+
+& "$env:windir\system32\inetsrv\appcmd.exe" set config `
+    -section:applicationPools `
+    "/[name='PassReset'].environmentVariables.[name='ClientSettings__Recaptcha__PrivateKey',value='<secret>']" `
+    /commit:apphost
+```
+
+Apply after setting:
+```powershell
+Restart-WebAppPool -Name 'PassReset'
+# or: iisreset
+```
+
+Env-var values are scoped to the PassReset AppPool and never appear on disk outside `applicationHost.config`. The installer itself does NOT set these variables (D-18) — operators inject them after the install completes. See `docs/Secret-Management.md` for the complete STAB-017 workflow (developer user-secrets, operator AppPool env vars, and the v2.0 DPAPI/Key Vault migration path).
+
+**HTTPS binding reminder (STAB-016):** STAB-016 wires HSTS emission through the runtime `IOptions<WebSettings>` pipeline; the installer now warns when an HTTPS binding is missing. Verify the binding with `Get-WebBinding -Name PassReset -Protocol https` before turning `EnableHttpsRedirect: true` on in production.
+
+---
+
 *For AD service account setup and required permissions, see [`AD-ServiceAccount-Setup.md`](AD-ServiceAccount-Setup.md).*

@@ -594,3 +594,17 @@ As of v1.4.0 the production template (`appsettings.Production.template.json`) is
 ### Why pure JSON?
 
 The template now validates against [`appsettings.schema.json`](../src/PassReset.Web/appsettings.schema.json) (JSON Schema Draft 2020-12). PowerShell `Test-Json`, `System.Text.Json`, and the installer's pre-flight validator all reject JSONC (`//` comments). Keeping the template pure JSON unblocks automated schema validation in CI, during `Install-PassReset.ps1` upgrades, and inside the runtime's startup validators.
+
+---
+
+### Secrets and env-var overrides (STAB-017)
+
+The three production secrets below can be sourced from process environment variables (or `dotnet user-secrets` in Development) instead of being stored in `appsettings.Production.json`. ASP.NET Core's default host builder wires `AddEnvironmentVariables()` using the `__` (double underscore) path delimiter (D-16 — no custom `PASSRESET_` prefix).
+
+| Config key | Env var name | Source precedence |
+|---|---|---|
+| `SmtpSettings.Password` | `SmtpSettings__Password` | appsettings < user-secrets (Dev) < env var |
+| `PasswordChangeOptions.ServiceAccountPassword` | `PasswordChangeOptions__ServiceAccountPassword` | same |
+| `ClientSettings.Recaptcha.PrivateKey` | `ClientSettings__Recaptcha__PrivateKey` | same |
+
+See `docs/Secret-Management.md` for developer (`dotnet user-secrets`) and operator (`appcmd`) workflows, and `docs/IIS-Setup.md` for the AppPool env-var snippet. The installer itself does not set these values — operators own secret injection after install (D-18). Encrypted-at-rest storage (DPAPI / Key Vault) is scheduled for v2.0 (V2-003).

@@ -21,6 +21,48 @@ To verify file permissions:
 Get-Acl C:\inetpub\PassReset\appsettings.Production.json | Format-List
 ```
 
+## Environment Variables and User Secrets (STAB-017)
+
+PassReset relies on ASP.NET Core's default configuration precedence. The three secrets above can be sourced from environment variables (production) or `dotnet user-secrets` (development) without any code changes — the `__` (double underscore) path delimiter is the built-in binding convention (D-16). No custom `PASSRESET_` prefix is introduced.
+
+**Source precedence** (later wins):
+1. `appsettings.json`
+2. `appsettings.{Environment}.json`
+3. `dotnet user-secrets` (Development only, when `UserSecretsId` is set in the csproj)
+4. `AddEnvironmentVariables()` with `__` path delimiter
+5. Command-line args
+
+**Config key → env var mapping:**
+
+| Config key | Env var |
+|---|---|
+| `SmtpSettings.Password` | `SmtpSettings__Password` |
+| `PasswordChangeOptions.ServiceAccountPassword` | `PasswordChangeOptions__ServiceAccountPassword` |
+| `ClientSettings.Recaptcha.PrivateKey` | `ClientSettings__Recaptcha__PrivateKey` |
+
+**Developer workflow (user-secrets, Development environment only):**
+```bash
+cd src/PassReset.Web
+dotnet user-secrets init
+dotnet user-secrets set "SmtpSettings:Password" "dev-pass"
+dotnet user-secrets set "ClientSettings:Recaptcha:PrivateKey" "test-key"
+dotnet user-secrets list
+dotnet user-secrets remove "SmtpSettings:Password"
+```
+
+**Operator workflow (AppPool environment variable via `appcmd`):**
+```powershell
+& "$env:windir\system32\inetsrv\appcmd.exe" set config `
+    -section:applicationPools `
+    "/[name='PassReset'].environmentVariables.[name='SmtpSettings__Password',value='<secret>']" `
+    /commit:apphost
+Restart-WebAppPool -Name 'PassReset'
+```
+
+**Regression guard:** `ClientSettings.Recaptcha.PrivateKey` is marked `[JsonIgnore]` on the DTO and never appears in `GET /api/password` regardless of whether the value was sourced from `appsettings`, user-secrets, or an env var (proved by `EnvironmentVariableOverrideTests`).
+
+**Operator note:** The installer does NOT set these environment variables (D-18 — operator owns secret injection). Full encrypted-at-rest solutions (DPAPI/Key Vault) are scheduled for v2.0 (V2-003); STAB-017 is the documented stepping stone that unblocks externalizing secrets today without committing to a specific KMS.
+
 ## Hardening Options
 
 ### Option 1: Environment Variables (Recommended)
