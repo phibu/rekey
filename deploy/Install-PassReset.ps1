@@ -552,11 +552,8 @@ try {
     # WebAdministration is a legacy PSSnapIn-based module that only exists in
     # Windows PowerShell (Desktop edition). PS 7 can't load it natively
     # (PSSnapIn types were removed from PS Core) — importing always goes
-    # through the WinPSCompat remoting session. That's fine for this
-    # installer's IIS:\ drive usage, but PS 7 prints a verbose warning about
-    # deserialized objects on every import. Silence it; the round-tripped
-    # proxy objects are sufficient for Set-ItemProperty / Get-ItemProperty /
-    # Test-Path / New-WebAppPool / New-Website, which is all we use.
+    # through the WinPSCompat remoting session. Silence the noisy
+    # deserialization warning emitted on import.
     Import-Module WebAdministration -WarningAction SilentlyContinue -ErrorAction Stop
 } catch {
     Abort @"
@@ -570,6 +567,44 @@ Fix: run as Administrator and enable the feature, then re-run this installer:
 
 Underlying error: $($_.Exception.Message)
 "@
+}
+
+# Importing WebAdministration via the WinPSCompat session registers the IIS:\
+# PSDrive INSIDE the compat session, not in our local PS 7 session. Downstream
+# Set-ItemProperty "IIS:\AppPools\..." calls then fail with the notorious
+# 'Cannot find drive. A drive with the name "IIS" does not exist' error.
+# Use the modern IISAdministration module (ships with IIS 8.5+, PS Core-native)
+# for drive-less operations, OR register the IIS:\ drive manually using the
+# WebAdministration provider surfaced through the compat session.
+#
+# Explicit drive registration is the minimal change — preserves all existing
+# Set-ItemProperty "IIS:\..." call sites below.
+if (-not (Get-PSDrive -Name 'IIS' -ErrorAction SilentlyContinue)) {
+    try {
+        New-PSDrive -Name 'IIS' -PSProvider WebAdministration -Root 'MACHINE/WEBROOT/APPHOST' `
+            -Scope Script -ErrorAction Stop | Out-Null
+    } catch {
+        Abort @"
+The WebAdministration module loaded, but the IIS:\ PSDrive is not available
+in this PowerShell session — so downstream Set-ItemProperty "IIS:\..." calls
+will fail with 'Cannot find drive'.
+
+This happens on PS 7 because WebAdministration loads through the WinPSCompat
+remoting session, which registers the IIS:\ drive inside the compat process,
+not locally. The automatic fallback (New-PSDrive with the WebAdministration
+provider) also failed.
+
+Underlying error: $($_.Exception.Message)
+
+Workarounds:
+  1. Run the installer under Windows PowerShell 5.1 instead:
+       powershell.exe -File .\Install-PassReset.ps1
+     (5.1 loads WebAdministration natively and registers IIS:\ immediately.)
+  2. File an issue at https://github.com/phibu/AD-Passreset-Portal/issues
+     with your PS version (`\$PSVersionTable.PSVersion`) and the output of
+     `Get-PSProvider WebAdministration`.
+"@
+    }
 }
 
 $poolExists = Test-Path "IIS:\AppPools\$AppPoolName"
