@@ -27,6 +27,7 @@ Source: 21 GitHub issues (#19–#39) opened 2026-04-16. Must ship before v2.0 wo
 - [ ] **Phase 11: v2.0 Multi-OS PoC** — Research cross-platform path and produce Docker PoC *(was Phase 4)*
 - [ ] **Phase 12: v2.0 Local Password DB** — Operator-managed banned-words + attempted-pwned lookup store *(was Phase 5)*
 - [ ] **Phase 13: v2.0 Secure Config Storage** — Eliminate cleartext secrets from appsettings.Production.json *(was Phase 6)*
+- [ ] **Phase 14: v2.0 Web Admin Configuration UI** — Localhost-only web surface for editing appsettings.Production.json (schema-validated, restart-aware)
 
 ## Phase Details
 
@@ -144,6 +145,21 @@ Source: 21 GitHub issues (#19–#39) opened 2026-04-16. Must ship before v2.0 wo
   4. `docs/Secret-Management.md` reflects the new default and documents fallback/override knobs
 **Plans**: TBD
 
+### Phase 14: v2.0 Web Admin Configuration UI
+**Goal**: Operators can view and edit `appsettings.Production.json` via a localhost-only web UI that validates against the authoritative schema and prompts for AppPool recycle on write
+**Depends on**: Phase 8 (authoritative schema), Phase 13 (secrets segregation — editor must know which keys are secret-managed vs. file-backed)
+**Parallel with**: None (sequenced after Phase 13)
+**Target release**: v2.0.0
+**Requirements**: TBD (will be created during `/gsd-discuss-phase 14`)
+**Success Criteria** (what must be TRUE):
+  1. Admin page is reachable only from `127.0.0.1` / `::1` — remote requests return 403
+  2. UI renders fields from `appsettings.schema.json` (Phase 08), including types, defaults, and obsolete markers
+  3. Changes are validated against the schema client-side AND server-side before write
+  4. Save operation writes atomically (tmp file + rename) and triggers an AppPool recycle prompt
+  5. Secret-managed keys (Phase 13 outputs) are shown as "managed externally" and not editable via the UI
+  6. All writes emit a SIEM audit event (reuses Phase 09 AuditEvent infrastructure)
+**Plans**: TBD
+
 ## Cross-Phase Dependencies
 
 | From | To | Nature |
@@ -156,6 +172,9 @@ Source: 21 GitHub issues (#19–#39) opened 2026-04-16. Must ship before v2.0 wo
 | Phase 11 | Phase 12 | Provider-abstraction decision informs local-DB integration point |
 | Phase 11 | Phase 13 | Platform decision (Windows-only vs cross-platform) constrains secret-storage mechanism |
 | STAB-017 | Phase 13 | Env-var secrets is the stepping stone to full secure config storage |
+| Phase 8 | Phase 14 | Admin UI renders fields from authoritative appsettings.schema.json |
+| Phase 9 | Phase 14 | Admin UI writes emit SIEM AuditEvent via existing audit infrastructure |
+| Phase 13 | Phase 14 | Admin UI must know which keys are secret-managed (non-editable) vs. file-backed |
 
 ## Parallelism Map
 
@@ -164,8 +183,9 @@ Source: 21 GitHub issues (#19–#39) opened 2026-04-16. Must ship before v2.0 wo
 - Phase 10 sequences after 7+8+9 land (integrates their surfaces into /health, post-deploy check, CI)
 
 **v2.0.0 (queued):**
-- Sequential default: Phase 11 → Phase 12 → Phase 13
+- Sequential default: Phase 11 → Phase 12 → Phase 13 → Phase 14
 - Phases 12 and 13 could run in parallel once Phase 11 lands; coarse granularity keeps them sequential unless capacity allows
+- Phase 14 sequences after Phase 13 (needs secret-managed key list to render "managed externally" placeholders)
 
 ## Progress
 

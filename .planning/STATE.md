@@ -47,7 +47,7 @@ Next: operator UAT on Windows/IIS host for `deploy/HUMAN-UAT-10-02.md`, then tag
 | v1.3.1 | 07 (legacy) | ✅ Shipped 2026-04-15 (archived) |
 | v1.3.2 | 07 (code review fix rollup) | ✅ Shipped 2026-04-16 (archived) |
 | v1.4.0 | 7 ✓, 8 ✓, 9 ✓, 10 ✓ (UAT deferred) | Active — 4/4 phases code-complete |
-| v2.0.0 | 11, 12, 13 | Queued — 0/3 phases started |
+| v2.0.0 | 11, 12, 13, 14 | Queued — 0/4 phases started |
 
 > Note: legacy phase 07 numbering belongs to the archived v1.3.1/v1.3.2 milestones. The v1.4.0 chain restarts the active phase numbering at 7 going forward; archived directories are not affected.
 
