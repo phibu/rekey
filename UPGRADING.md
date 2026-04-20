@@ -127,6 +127,69 @@ credentials surface as `(got "<redacted>")` — the actual secret is never writt
 Re-run `Install-PassReset.ps1` from an elevated `pwsh` session to retry the idempotent
 registration, then recycle the pool.
 
+#### `/api/health` response shape change (STAB-018)
+
+`GET /api/health` now returns a nested `checks` object in addition to the top-level `status`:
+
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-04-20T12:34:56Z",
+  "checks": {
+    "ad":            { "status": "healthy",     "latency_ms": 12, "last_checked": "..." },
+    "smtp":          { "status": "healthy",     "latency_ms": 45, "last_checked": "...", "skipped": false },
+    "expiryService": { "status": "not-enabled", "latency_ms": 0,  "last_checked": "..." }
+  }
+}
+```
+
+The top-level `status` field is unchanged (`healthy` | `degraded` | `unhealthy`); load-balancer
+probes that only read `status` continue to work. The endpoint still returns HTTP 200 when
+healthy and 503 when degraded or unhealthy.
+
+SMTP probe is skipped (`skipped: true`) when both `EmailNotificationSettings.Enabled` and
+`PasswordExpiryNotificationSettings.Enabled` are `false`. ExpiryService reports `not-enabled`
+when the background service is not registered. Both are treated as neutral (not failures) by
+the aggregate rollup.
+
+The response body contains NO secrets — `SmtpSettings.Password`, `ClientSettings.Recaptcha.PrivateKey`,
+and LDAP passwords are never serialized into `/api/health`.
+
+#### Installer post-deploy verification (STAB-019)
+
+`Install-PassReset.ps1` now verifies the site is reachable before declaring success.
+After the AppPool recycle it polls `GET /api/health` + `GET /api/password` up to 10 times at
+2-second intervals (≈20 seconds). On success it prints an ASCII-only banner:
+
+```
+Health OK -- AD: healthy, SMTP: healthy, ExpiryService: not-enabled
+```
+
+On failure the installer exits with code 1 and prints the last response body. To bypass
+verification (air-gapped hosts, no reCAPTCHA key, etc.), pass `-SkipHealthCheck`:
+
+```powershell
+pwsh -File .\Install-PassReset.ps1 -SkipHealthCheck
+```
+
+Under `-Force` the check still runs but does not prompt on failure.
+
+#### AD password policy panel visible by default (STAB-021)
+
+The `AdPasswordPolicyPanel` now renders **above the Username field** by default on fresh
+installs. The new `ClientSettings.ShowAdPasswordPolicy` setting defaults to `true` across
+`appsettings.json`, `appsettings.Production.template.json`, and `appsettings.schema.json`.
+
+**Upgraders whose `appsettings.Production.json` did not explicitly set `ShowAdPasswordPolicy`:**
+the `-ConfigSync Merge` (default) pass will add `"ShowAdPasswordPolicy": true` from the schema
+default. To hide the panel after upgrade, set the value explicitly to `false`:
+
+```json
+"ClientSettings": {
+  "ShowAdPasswordPolicy": false
+}
+```
+
 ### Upgrading from 1.2.2 → 1.2.3
 
 #### AppPool identity is now preserved on upgrade (BUG-003)
