@@ -596,13 +596,13 @@ provider) also failed.
 
 Underlying error: $($_.Exception.Message)
 
-Workarounds:
-  1. Run the installer under Windows PowerShell 5.1 instead:
-       powershell.exe -File .\Install-PassReset.ps1
-     (5.1 loads WebAdministration natively and registers IIS:\ immediately.)
-  2. File an issue at https://github.com/phibu/AD-Passreset-Portal/issues
-     with your PS version (`\$PSVersionTable.PSVersion`) and the output of
-     `Get-PSProvider WebAdministration`.
+This installer requires PowerShell 7. To help us diagnose and fix the
+compat-session issue on your host, run the read-only diagnostic probe
+and attach the output to an issue:
+
+  pwsh -NoProfile -File .\Test-PS7Iis.ps1
+  # Then file at https://github.com/phibu/AD-Passreset-Portal/issues
+  # with your PSVersionTable, OS build, and the probe output.
 "@
     }
 }
