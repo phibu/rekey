@@ -94,7 +94,11 @@ param(
     [ValidateSet('Merge','Review','None')]
     [string] $ConfigSync = '',   # empty -> resolved post-upgrade-detection: prompt if interactive, 'Merge' if -Force, 'None' if fresh install
 
-    [switch] $Force
+    [switch] $Force,
+
+    # STAB-019: bypass post-deploy /api/health + /api/password verification (air-gapped hosts only).
+    # Default $false — verification runs by default, including under -Force (D-06/D-07).
+    [switch] $SkipHealthCheck = $false
 )
 
 Set-StrictMode -Version Latest
@@ -936,6 +940,61 @@ if (-not $siteExists) {
 if ($CertThumbprint) {
     Write-Ok "PassReset reachable at https://${hostHeader}:${HttpsPort}/ (HTTPS binding configured)"
 }
+
+# ----- STAB-019: post-deploy verification -----
+# Verify the freshly deployed app responds on /api/health + /api/password before
+# declaring success. Retries 10x at 2s intervals (~20s worst case, matches AppPool
+# cold-start). Hard-fails with exit 1 on final failure. Runs under -Force (D-06/D-07).
+# Only -SkipHealthCheck (air-gapped hosts) bypasses (D-10).
+if (-not $SkipHealthCheck) {
+    $baseUrl = if ($CertThumbprint -and $HttpsPort) {
+        "https://${hostHeader}:${HttpsPort}"
+    } else {
+        "http://${hostHeader}:${selectedHttpPort}"
+    }
+
+    $maxAttempts  = 10
+    $attempt      = 0
+    $ok           = $false
+    $lastHealth   = $null
+    $lastSettings = $null
+
+    Write-Step "Verifying deployment at $baseUrl (up to $maxAttempts x 2s)"
+
+    do {
+        Start-Sleep -Seconds 2
+        $attempt++
+        try {
+            $lastHealth   = Invoke-WebRequest -Uri "$baseUrl/api/health"   -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+            $lastSettings = Invoke-WebRequest -Uri "$baseUrl/api/password" -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+            if ($lastHealth.StatusCode -eq 200 -and $lastSettings.StatusCode -eq 200) {
+                $ok = $true
+            }
+        } catch {
+            Write-Warning ("Attempt {0}/{1}: {2}" -f $attempt, $maxAttempts, $_.Exception.Message)
+        }
+    } while (-not $ok -and $attempt -lt $maxAttempts)
+
+    if (-not $ok) {
+        $bodySnippet = if ($lastHealth) { $lastHealth.Content } else { "(no response)" }
+        Write-Error ("Post-deploy health check failed after {0} attempts. Last /api/health response: {1}" -f $maxAttempts, $bodySnippet)
+        exit 1
+    }
+
+    try {
+        $body  = $lastHealth.Content | ConvertFrom-Json
+        $ad    = $body.checks.ad.status
+        $smtp  = $body.checks.smtp.status
+        $expir = $body.checks.expiryService.status
+        Write-Ok ("Health OK -- AD: {0}, SMTP: {1}, ExpiryService: {2}" -f $ad, $smtp, $expir)
+    } catch {
+        Write-Warning ("Health endpoint returned 200 but JSON parse failed: {0}" -f $_.Exception.Message)
+        Write-Ok "Health OK (body could not be parsed -- status 200 accepted)"
+    }
+} else {
+    Write-Step "Skipping post-deploy health check (-SkipHealthCheck specified)"
+}
+# ----- /STAB-019 -----
 
 # ─── 6. NTFS permissions ──────────────────────────────────────────────────────
 
