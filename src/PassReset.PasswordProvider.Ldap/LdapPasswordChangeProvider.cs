@@ -116,6 +116,17 @@ public sealed class LdapPasswordChangeProvider : IPasswordChangeProvider
         }
 
         var opts = _options.Value;
+
+        // Group membership policy: deny if user is in any RestrictedAdGroups,
+        // or if AllowedAdGroups is configured and the user is in none of them.
+        var groupCheck = ValidateGroups(session, userDn);
+        if (groupCheck is not null) return groupCheck;
+
+        // STAB-004: defense-in-depth client-side check of domain minPwdAge against pwdLastSet.
+        // Avoids the round-trip + opaque AD error that the server would return otherwise.
+        var agePrecheck = PreCheckMinPwdAge(session, userDn);
+        if (agePrecheck is not null) return agePrecheck;
+
         try
         {
             var modifyRequest = BuildChangePasswordRequest(userDn, currentPassword, newPassword, opts.AllowSetPasswordFallback);
@@ -193,6 +204,174 @@ public sealed class LdapPasswordChangeProvider : IPasswordChangeProvider
         };
         add.Add(newBytes);
         return new ModifyRequest(userDn, del, add);
+    }
+
+    /// <summary>
+    /// Enforces RestrictedAdGroups (deny-list) and AllowedAdGroups (allow-list) membership policy.
+    /// Skips the LDAP round-trip when neither list is configured. Compares the user's memberOf
+    /// values by Common Name (CN=Foo,...) against the configured group names (case-insensitive).
+    /// </summary>
+    /// <returns>
+    /// <see cref="ApiErrorItem"/> with <see cref="ApiErrorCode.ChangeNotPermitted"/> when the user
+    /// is in a restricted group, or absent from a non-empty allowed list. <c>null</c> when allowed.
+    /// </returns>
+    private ApiErrorItem? ValidateGroups(ILdapSession session, string userDn)
+    {
+        var opts = _options.Value;
+        var restricted = opts.RestrictedAdGroups ?? new List<string>();
+        var allowed    = opts.AllowedAdGroups    ?? new List<string>();
+        if (restricted.Count == 0 && allowed.Count == 0)
+            return null;  // Nothing to enforce — skip the LDAP round-trip.
+
+        var userGroups = ReadUserGroups(session, userDn);
+
+        if (restricted.Count > 0)
+        {
+            foreach (var g in restricted)
+            {
+                if (userGroups.Contains(g, StringComparer.OrdinalIgnoreCase))
+                {
+                    _logger.LogInformation(
+                        "Change denied: user {UserDn} is in restricted group {Group}", userDn, g);
+                    return new ApiErrorItem(ApiErrorCode.ChangeNotPermitted, MessageFor(ApiErrorCode.ChangeNotPermitted));
+                }
+            }
+        }
+
+        if (allowed.Count > 0)
+        {
+            var anyAllowed = allowed.Any(g => userGroups.Contains(g, StringComparer.OrdinalIgnoreCase));
+            if (!anyAllowed)
+            {
+                _logger.LogInformation(
+                    "Change denied: user {UserDn} is not in any of the AllowedAdGroups", userDn);
+                return new ApiErrorItem(ApiErrorCode.ChangeNotPermitted, MessageFor(ApiErrorCode.ChangeNotPermitted));
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Reads the <c>memberOf</c> attribute for <paramref name="userDn"/> and extracts the CN of each
+    /// distinguished name. Returns an empty list on any LDAP failure (the caller treats that as
+    /// "no group membership detected" — a deliberate fail-open, since the provider's group policy
+    /// is defense-in-depth on top of AD's own ACL enforcement).
+    /// </summary>
+    private List<string> ReadUserGroups(ILdapSession session, string userDn)
+    {
+        try
+        {
+            var req = new SearchRequest(
+                distinguishedName: userDn,
+                ldapFilter: "(objectClass=user)",
+                searchScope: SearchScope.Base,
+                attributeList: new[] { LdapAttributeNames.MemberOf });
+            var resp = session.Search(req);
+            if (resp.Entries.Count == 0) return new List<string>();
+            var entry = resp.Entries[0];
+            if (!entry.Attributes.Contains(LdapAttributeNames.MemberOf)) return new List<string>();
+            var attr = entry.Attributes[LdapAttributeNames.MemberOf];
+            var result = new List<string>(attr.Count);
+            foreach (var raw in attr.GetValues(typeof(string)))
+            {
+                if (raw is string dn)
+                {
+                    var cn = ExtractCommonName(dn);
+                    if (cn is not null) result.Add(cn);
+                }
+            }
+            return result;
+        }
+        catch (Exception ex) when (ex is LdapException or DirectoryOperationException)
+        {
+            _logger.LogWarning(ex, "memberOf lookup failed for {UserDn}; treating as no groups", userDn);
+            return new List<string>();
+        }
+    }
+
+    /// <summary>
+    /// Extracts the Common Name from a DN, e.g. <c>CN=Domain Admins,CN=Users,DC=corp,DC=example,DC=com</c>
+    /// → <c>Domain Admins</c>. Returns null if the DN does not start with <c>CN=</c>.
+    /// </summary>
+    internal static string? ExtractCommonName(string distinguishedName)
+    {
+        if (string.IsNullOrEmpty(distinguishedName)) return null;
+        const string prefix = "CN=";
+        if (!distinguishedName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return null;
+        var commaIdx = distinguishedName.IndexOf(',', prefix.Length);
+        return commaIdx < 0
+            ? distinguishedName[prefix.Length..]
+            : distinguishedName[prefix.Length..commaIdx];
+    }
+
+    /// <summary>
+    /// STAB-004 defense-in-depth: blocks a change request when <c>now - pwdLastSet</c>
+    /// is shorter than the domain's <c>minPwdAge</c>. Skipped silently when
+    /// <see cref="PasswordChangeOptions.EnforceMinimumPasswordAge"/> is false, when the
+    /// rootDSE query returned no <c>minPwdAge</c>, or when the user has no <c>pwdLastSet</c>
+    /// attribute (which would mean "must change at next logon" — let AD handle that path).
+    /// </summary>
+    private ApiErrorItem? PreCheckMinPwdAge(ILdapSession session, string userDn)
+    {
+        var opts = _options.Value;
+        if (!opts.EnforceMinimumPasswordAge) return null;
+
+        var rootDse = session.RootDse;
+        if (rootDse is null || !rootDse.Attributes.Contains(LdapAttributeNames.MinPwdAge))
+            return null;
+
+        if (!long.TryParse(GetSingleString(rootDse, LdapAttributeNames.MinPwdAge), out var minPwdAgeRaw))
+            return null;
+
+        // AD stores minPwdAge as a negative 100-ns interval (e.g. -864000000000 == 1 day).
+        // Zero means no minimum age is enforced.
+        if (minPwdAgeRaw == 0) return null;
+        var minPwdAge = TimeSpan.FromTicks(Math.Abs(minPwdAgeRaw));
+
+        // Read pwdLastSet for the user via Base-scope search.
+        long pwdLastSetRaw;
+        try
+        {
+            var req = new SearchRequest(
+                distinguishedName: userDn,
+                ldapFilter: "(objectClass=user)",
+                searchScope: SearchScope.Base,
+                attributeList: new[] { LdapAttributeNames.PwdLastSet });
+            var resp = session.Search(req);
+            if (resp.Entries.Count == 0) return null;
+            var entry = resp.Entries[0];
+            if (!entry.Attributes.Contains(LdapAttributeNames.PwdLastSet)) return null;
+            if (!long.TryParse(GetSingleString(entry, LdapAttributeNames.PwdLastSet), out pwdLastSetRaw))
+                return null;
+        }
+        catch (Exception ex) when (ex is LdapException or DirectoryOperationException)
+        {
+            _logger.LogWarning(ex, "pwdLastSet lookup failed for {UserDn}; skipping min-age precheck", userDn);
+            return null;
+        }
+
+        // pwdLastSet=0 means "must change at next logon" — minPwdAge does not apply.
+        if (pwdLastSetRaw == 0) return null;
+
+        var lastSet = DateTime.FromFileTimeUtc(pwdLastSetRaw);
+        var elapsed = DateTime.UtcNow - lastSet;
+        if (elapsed < minPwdAge)
+        {
+            _logger.LogInformation(
+                "Change blocked by minPwdAge precheck: elapsed={Elapsed} minAge={MinAge} for {UserDn}",
+                elapsed, minPwdAge, userDn);
+            return new ApiErrorItem(ApiErrorCode.PasswordTooRecentlyChanged,
+                MessageFor(ApiErrorCode.PasswordTooRecentlyChanged));
+        }
+        return null;
+    }
+
+    private static string? GetSingleString(SearchResultEntry entry, string attributeName)
+    {
+        if (!entry.Attributes.Contains(attributeName)) return null;
+        var values = entry.Attributes[attributeName].GetValues(typeof(string));
+        return values.Length > 0 ? values[0] as string : null;
     }
 
     private static string MessageFor(ApiErrorCode code) => code switch

@@ -59,6 +59,23 @@ public class LdapPasswordChangeProviderTests
             null,
             new object[] { dn },
             null)!;
+
+        if (attrs is { Length: > 0 })
+        {
+            // Group values per attribute name so multiple (Name, Value) pairs with the
+            // same Name (e.g. multi-valued memberOf) collapse into one DirectoryAttribute.
+            var attrCollection = entry.Attributes;
+            var addMethod = typeof(SearchResultAttributeCollection).GetMethod(
+                "Add", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance,
+                null, new[] { typeof(string), typeof(DirectoryAttribute) }, null)!;
+            foreach (var group in attrs.GroupBy(a => a.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                var directoryAttr = new DirectoryAttribute { Name = group.Key };
+                foreach (var (_, value) in group) directoryAttr.Add(value);
+                addMethod.Invoke(attrCollection, new object?[] { group.Key, directoryAttr });
+            }
+        }
+
         return entry;
     }
 
@@ -183,6 +200,80 @@ public class LdapPasswordChangeProviderTests
 
         Assert.NotNull(result);
         Assert.Equal(ApiErrorCode.UserNotFound, result!.ErrorCode);
+        Assert.Equal(0, fake.ModifyCallCount);
+    }
+
+    [Fact]
+    public async Task PerformPasswordChangeAsync_RestrictedGroup_ReturnsChangeNotPermitted()
+    {
+        var opts = new PasswordChangeOptions
+        {
+            AllowedUsernameAttributes = new[] { "samaccountname" },
+            RestrictedAdGroups = new() { "Domain Admins" },
+            EnforceMinimumPasswordAge = false,
+            BaseDn = "DC=corp,DC=example,DC=com",
+            ServiceAccountDn = "CN=svc,DC=corp,DC=example,DC=com",
+            ServiceAccountPassword = "svcpw",
+            LdapHostnames = new[] { "dc01.corp.example.com" },
+            LdapPort = 636,
+        };
+        var (sut, fake) = Build(opts);
+
+        // First search resolves the user DN (filter=(sAMAccountName=alice)).
+        fake.OnSearch(
+            "(sAMAccountName=alice)",
+            MakeResponse(MakeEntry("CN=Alice,OU=Users,DC=corp,DC=example,DC=com")));
+
+        // Second search is the Base-scope group lookup on the user DN; the implementation
+        // emits filter "(objectClass=user)" requesting memberOf. FakeLdapSession matches
+        // by Filter.Contains, so we register the rule with that filter substring.
+        fake.OnSearch(
+            "(objectClass=user)",
+            MakeResponse(MakeEntry("CN=Alice,OU=Users,DC=corp,DC=example,DC=com",
+                (LdapAttributeNames.MemberOf, "CN=Domain Admins,CN=Users,DC=corp,DC=example,DC=com"))));
+
+        var result = await sut.PerformPasswordChangeAsync("alice", "OldPass1!", "NewPass1!");
+
+        Assert.NotNull(result);
+        Assert.Equal(ApiErrorCode.ChangeNotPermitted, result!.ErrorCode);
+        Assert.Equal(0, fake.ModifyCallCount);
+    }
+
+    [Fact]
+    public async Task PerformPasswordChangeAsync_MinPwdAgeViolation_ReturnsPasswordTooRecent()
+    {
+        var opts = new PasswordChangeOptions
+        {
+            AllowedUsernameAttributes = new[] { "samaccountname" },
+            EnforceMinimumPasswordAge = true,
+            BaseDn = "DC=corp,DC=example,DC=com",
+            ServiceAccountDn = "CN=svc,DC=corp,DC=example,DC=com",
+            ServiceAccountPassword = "svcpw",
+            LdapHostnames = new[] { "dc01.corp.example.com" },
+            LdapPort = 636,
+        };
+        var (sut, fake) = Build(opts);
+
+        var pwdLastSet = DateTime.UtcNow.AddHours(-1).ToFileTimeUtc();  // 1 hour ago
+        var minPwdAgeTicks = -TimeSpan.FromDays(1).Ticks;               // 1 day min age, negative per AD
+
+        // FindUserDnAsync only requests the distinguishedName attribute, so PwdLastSet
+        // here is never read by FindUserDn — it's read by the subsequent Base-scope
+        // attribute fetch in PreCheckMinPwdAge (filter "(objectClass=user)").
+        fake.OnSearch(
+            "(sAMAccountName=alice)",
+            MakeResponse(MakeEntry("CN=Alice,OU=Users,DC=corp,DC=example,DC=com")));
+        fake.OnSearch(
+            "(objectClass=user)",
+            MakeResponse(MakeEntry("CN=Alice,OU=Users,DC=corp,DC=example,DC=com",
+                (LdapAttributeNames.PwdLastSet, pwdLastSet.ToString()))));
+        fake.RootDse = MakeEntry("",
+            (LdapAttributeNames.MinPwdAge, minPwdAgeTicks.ToString()));
+
+        var result = await sut.PerformPasswordChangeAsync("alice", "OldPass1!", "NewPass1!");
+
+        Assert.NotNull(result);
+        Assert.Equal(ApiErrorCode.PasswordTooRecentlyChanged, result!.ErrorCode);
         Assert.Equal(0, fake.ModifyCallCount);
     }
 }
