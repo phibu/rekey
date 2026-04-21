@@ -216,6 +216,8 @@ try
 #if WINDOWS_PROVIDER
     else  // effectiveProvider == WiringTarget.Windows
     {
+        builder.Services.AddSingleton<PassReset.PasswordProvider.IPrincipalContextFactory,
+                                      PassReset.PasswordProvider.DefaultPrincipalContextFactory>();
         builder.Services.AddSingleton<PasswordChangeProvider>();
         builder.Services.AddSingleton<LockoutPasswordChangeProvider>(sp =>
             new LockoutPasswordChangeProvider(

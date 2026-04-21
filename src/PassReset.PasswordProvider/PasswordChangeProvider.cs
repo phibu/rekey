@@ -18,16 +18,19 @@ public sealed class PasswordChangeProvider : IPasswordChangeProvider
     private readonly PasswordChangeOptions _options;
     private readonly ILogger<PasswordChangeProvider> _logger;
     private readonly PwnedPasswordChecker _pwnedChecker;
+    private readonly IPrincipalContextFactory _contextFactory;
     private IdentityType _idType = IdentityType.UserPrincipalName;
 
     public PasswordChangeProvider(
         ILogger<PasswordChangeProvider> logger,
         IOptions<PasswordChangeOptions> options,
-        PwnedPasswordChecker pwnedChecker)
+        PwnedPasswordChecker pwnedChecker,
+        IPrincipalContextFactory contextFactory)
     {
         _logger  = logger;
         _options = options.Value;
         _pwnedChecker = pwnedChecker;
+        _contextFactory = contextFactory;
         SetIdType();
     }
 
@@ -536,7 +539,7 @@ public sealed class PasswordChangeProvider : IPasswordChangeProvider
         if (_options.AllowedUsernameAttributes.Length == 0)
         {
             var fixed_ = FixUsernameWithDomain(input);
-            return UserPrincipal.FindByIdentity(ctx, _idType, fixed_);
+            return _contextFactory.FindUser(ctx, _idType, fixed_);
         }
 
         foreach (var attr in _options.AllowedUsernameAttributes)
@@ -559,7 +562,7 @@ public sealed class PasswordChangeProvider : IPasswordChangeProvider
         };
     }
 
-    private static UserPrincipal? FindBySamAccountName(PrincipalContext ctx, string input)
+    private UserPrincipal? FindBySamAccountName(PrincipalContext ctx, string input)
     {
         // Strip domain prefix/suffix in all three common formats:
         //   DOMAIN\jdoe  → jdoe
@@ -568,7 +571,7 @@ public sealed class PasswordChangeProvider : IPasswordChangeProvider
         var sam = input.Contains('\\') ? input[(input.IndexOf('\\') + 1)..] :
                   input.Contains('@')  ? input[..input.IndexOf('@')]          :
                   input;
-        return UserPrincipal.FindByIdentity(ctx, IdentityType.SamAccountName, sam);
+        return _contextFactory.FindUser(ctx, IdentityType.SamAccountName, sam);
     }
 
     private UserPrincipal? FindByUserPrincipalName(PrincipalContext ctx, string input)
@@ -577,7 +580,7 @@ public sealed class PasswordChangeProvider : IPasswordChangeProvider
         var upn = !input.Contains('@') && !string.IsNullOrEmpty(_options.DefaultDomain)
             ? $"{input}@{_options.DefaultDomain}"
             : input;
-        return UserPrincipal.FindByIdentity(ctx, IdentityType.UserPrincipalName, upn);
+        return _contextFactory.FindUser(ctx, IdentityType.UserPrincipalName, upn);
     }
 
     private static UserPrincipal? FindByMail(PrincipalContext ctx, string mail)
@@ -606,7 +609,7 @@ public sealed class PasswordChangeProvider : IPasswordChangeProvider
         if (_options.UseAutomaticContext)
         {
             _logger.LogDebug("Acquiring domain context via AutomaticContext");
-            return new PrincipalContext(ContextType.Domain);
+            return _contextFactory.CreateDomainContext();
         }
 
         var server = $"{_options.LdapHostnames.First()}:{_options.LdapPort}";
@@ -616,7 +619,12 @@ public sealed class PasswordChangeProvider : IPasswordChangeProvider
             ? ContextOptions.Negotiate | ContextOptions.SecureSocketLayer
             : ContextOptions.Negotiate;
 
-        return new PrincipalContext(ContextType.Domain, server, null, contextOptions, _options.LdapUsername, _options.LdapPassword);
+        return _contextFactory.CreateDomainContext(
+            server: server,
+            container: null,
+            options: contextOptions,
+            username: _options.LdapUsername,
+            password: _options.LdapPassword);
     }
 
     private DirectoryEntry AcquireDomainEntry()
