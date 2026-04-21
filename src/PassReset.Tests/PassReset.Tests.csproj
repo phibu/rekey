@@ -1,6 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- Conditional TFM for cross-platform CI (Phase 11, Task 14):
+         Windows keeps net10.0-windows so existing tests can reference Web/PasswordProvider.
+         Non-Windows targets net10.0 so Linux CI can run cross-platform LDAP tests.
+         Task 15 will physically extract Windows-only test files into a separate project. -->
+    <TargetFramework Condition="'$(OS)' == 'Windows_NT'">net10.0-windows</TargetFramework>
+    <TargetFramework Condition="'$(OS)' != 'Windows_NT'">net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
@@ -37,8 +42,12 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PassReset.Common\PassReset.Common.csproj" />
-    <ProjectReference Include="..\PassReset.PasswordProvider\PassReset.PasswordProvider.csproj" />
     <ProjectReference Include="..\PassReset.PasswordProvider.Ldap\PassReset.PasswordProvider.Ldap.csproj" />
+  </ItemGroup>
+  <!-- Windows-only references (net10.0-windows projects). Task 15 will move the
+       tests that depend on these into a separate PassReset.Tests.Windows project. -->
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+    <ProjectReference Include="..\PassReset.PasswordProvider\PassReset.PasswordProvider.csproj" />
     <ProjectReference Include="..\PassReset.Web\PassReset.Web.csproj" />
   </ItemGroup>
 </Project>
