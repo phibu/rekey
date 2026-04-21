@@ -11,7 +11,7 @@ public interface ILdapSession : IDisposable
 {
     /// <summary>
     /// Bind to the configured directory using the service account credentials supplied at construction.
-    /// Throws <see cref="LdapException"/> on auth failure.
+    /// Throws <see cref="LdapException"/> on auth failure; also throws <see cref="DirectoryOperationException"/> on non-auth server errors.
     /// </summary>
     void Bind();
 
@@ -30,7 +30,7 @@ public interface ILdapSession : IDisposable
 
     /// <summary>
     /// Root DSE attributes (<c>defaultNamingContext</c>, <c>dnsHostName</c>, etc.).
-    /// Convenience: returns <c>null</c> if the root DSE query fails rather than throwing.
+    /// Convenience: returns <c>null</c> if the root DSE query fails. Catches and suppresses any <see cref="LdapException"/> or <see cref="DirectoryOperationException"/>; never propagates.
     /// </summary>
     SearchResultEntry? RootDse { get; }
 }
