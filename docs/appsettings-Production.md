@@ -215,6 +215,18 @@ If you change `path`, ensure the app pool identity has `Modify` rights on the pa
 | `NotificationEmailDomain` | string | `""` | Domain suffix used with `SamAccountNameAtDomain` strategy. Falls back to `DefaultDomain` when empty. |
 | `NotificationEmailTemplate` | string | `""` | Template string used with `Custom` strategy. Placeholders: `{samaccountname}`, `{userprincipalname}`, `{mail}`, `{defaultdomain}`. Example: `{samaccountname}@{defaultdomain}` |
 
+### `PasswordChangeOptions.LocalPolicy`
+
+Optional operator-managed offline policy enforcement. See
+[docs/LocalPasswordPolicy-Setup.md](LocalPasswordPolicy-Setup.md) for the
+full guide.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `BannedWordsPath` | string or null | `null` | Absolute path to a UTF-8 plaintext banned-words file. Null/empty disables the check. |
+| `LocalPwnedPasswordsPath` | string or null | `null` | Absolute path to a directory of HIBP SHA-1 per-prefix files. When set, the remote HIBP API call is disabled. |
+| `MinBannedTermLength` | integer | `4` | Minimum length for a banned term to be considered at load time. Must be >= 1. |
+
 ### Cross-platform LDAP provider (v2.0+)
 
 When PassReset runs on Linux (or with `ProviderMode: "Ldap"` on Windows), it selects the cross-platform `LdapPasswordChangeProvider` backed by `System.DirectoryServices.Protocols`. Operator setup — service account creation, the "Change Password" extended-right grant, and LDAPS CA trust on Linux — is documented in [`AD-ServiceAccount-LDAP-Setup.md`](AD-ServiceAccount-LDAP-Setup.md).
