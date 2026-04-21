@@ -159,3 +159,59 @@ jobs:
           "Scanned: npm (Node 22 / npm 10+) + dotnet NuGet packages" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "Gate: high + critical only; moderate/low printed as warnings" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "Allowlist: deploy/security-allowlist.json (entries expire <=90 days)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+
+  # Phase 11 Task 20: LDAP integration smoke test against a real Samba AD DC.
+  # Warning-only (continue-on-error: true) until stable. Runs on Linux because the
+  # integration project targets plain net10.0 and Samba ships a Linux container.
+  # Requires repo secrets: SAMBA_DOMAIN_PASSWORD, SAMBA_TEST_OLD_PASSWORD, SAMBA_TEST_NEW_PASSWORD.
+  integration-tests-ldap:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      # TODO: verify image availability periodically; alternatives include
+      # gbrenonet/samba-ad-dc or building from upstream samba/samba.
+      samba-dc:
+        image: diginc/samba-ad-dc:latest
+        ports:
+          - 389:389
+          - 636:636
+        env:
+          DOMAIN: SAMDOM
+          DOMAINPASS: ${{ secrets.SAMBA_DOMAIN_PASSWORD }}
+          DNSFORWARDER: 8.8.8.8
+        options: >-
+          --health-cmd "pidof samba"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PASSRESET_INTEGRATION_LDAP: "1"
+      PASSRESET_PasswordChangeOptions__ServiceAccountPassword: ${{ secrets.SAMBA_DOMAIN_PASSWORD }}
+      PASSRESET_TEST_USERNAME: "testuser"
+      PASSRESET_TEST_OLD_PASSWORD: ${{ secrets.SAMBA_TEST_OLD_PASSWORD }}
+      PASSRESET_TEST_NEW_PASSWORD: ${{ secrets.SAMBA_TEST_NEW_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5.2.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Wait for Samba DC LDAPS port
+        run: |
+          for i in {1..30}; do
+            nc -z localhost 636 && break
+            sleep 2
+          done
+
+      - name: Seed test user
+        run: |
+          docker exec ${{ job.services.samba-dc.id }} samba-tool user create \
+            "$PASSRESET_TEST_USERNAME" \
+            "$PASSRESET_TEST_OLD_PASSWORD" \
+            --given-name=Test --surname=User
+
+      - name: Run LDAP integration tests
+        working-directory: src/PassReset.Tests.Integration.Ldap
+        run: dotnet test -c Release --logger "console;verbosity=detailed"
