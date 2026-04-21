@@ -113,6 +113,41 @@ public class PasswordChangeOptions : IAppSettings
         set => _ldapPassword = value;
     }
 
+    /// <summary>
+    /// Selects which password provider implementation to use. Default <see cref="ProviderMode.Auto"/> picks
+    /// Windows on Windows platforms, Ldap elsewhere. Windows deployments upgrading from v1.4.x see no change.
+    /// </summary>
+    public ProviderMode ProviderMode { get; set; } = ProviderMode.Auto;
+
+    /// <summary>
+    /// Distinguished name of the AD service account used to bind over LDAPS when
+    /// <see cref="ProviderMode"/> is <see cref="ProviderMode.Ldap"/> (or <see cref="ProviderMode.Auto"/>
+    /// on non-Windows). Required: grant this account the 'Change Password' extended right on the target OU.
+    /// See <c>docs/AD-ServiceAccount-LDAP-Setup.md</c>.
+    /// </summary>
+    public string ServiceAccountDn { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Service account password for LDAPS bind. Bind via environment variable
+    /// <c>PasswordChangeOptions__ServiceAccountPassword</c> per the STAB-017 env-var pattern;
+    /// never commit plaintext.
+    /// </summary>
+    public string ServiceAccountPassword { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Base DN for user searches (typically the domain root, e.g. <c>DC=corp,DC=example,DC=com</c>).
+    /// Required when <see cref="ProviderMode"/> resolves to <see cref="ProviderMode.Ldap"/>.
+    /// </summary>
+    public string BaseDn { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Optional SHA-1 or SHA-256 thumbprint allow-list for LDAPS certificates whose trust root is
+    /// not in the system certificate store (e.g. Linux hosts talking to an internal-CA-issued DC cert).
+    /// Empty list means 'use the system trust store only'. Mirrors the
+    /// <c>SmtpSettings.TrustedCertificateThumbprints</c> pattern.
+    /// </summary>
+    public List<string> LdapTrustedCertificateThumbprints { get; set; } = new();
+
     /// <inheritdoc />
     public string LdapUsername
     {
