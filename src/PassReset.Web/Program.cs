@@ -163,6 +163,8 @@ try
         builder.Services.AddSingleton<IEmailService, NoOpEmailService>();
         // Expiry service is never wired in debug mode — diagnostics report "not-enabled".
         builder.Services.AddSingleton<IExpiryServiceDiagnostics>(new NullExpiryServiceDiagnostics());
+        // Health probe — LDAP TCP probe is cross-platform; returns NotConfigured when LdapHostnames empty.
+        builder.Services.AddSingleton<IAdConnectivityProbe, LdapTcpProbe>();
     }
     else if (effectiveProvider == WiringTarget.Ldap)
     {
@@ -196,6 +198,8 @@ try
                 sp.GetRequiredService<IOptions<PasswordChangeOptions>>(),
                 sp.GetRequiredService<ILogger<LockoutPasswordChangeProvider>>()));
         builder.Services.AddTransient<IEmailService, SmtpEmailService>();
+        // Health probe — cross-platform LDAP TCP probe.
+        builder.Services.AddSingleton<IAdConnectivityProbe, LdapTcpProbe>();
 
         if (expirySettings.Enabled)
         {
@@ -219,6 +223,8 @@ try
                 sp.GetRequiredService<IOptions<PasswordChangeOptions>>(),
                 sp.GetRequiredService<ILogger<LockoutPasswordChangeProvider>>()));
         builder.Services.AddTransient<IEmailService, SmtpEmailService>();
+        // Health probe — Windows domain-joined PrincipalContext check.
+        builder.Services.AddSingleton<IAdConnectivityProbe, PassReset.PasswordProvider.DomainJoinedProbe>();
 
         if (expirySettings.Enabled)
         {

@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Linq;
 using System.Net.Sockets;
 using System.Threading;
 using Microsoft.AspNetCore.Mvc;
@@ -27,6 +26,7 @@ public sealed class HealthController : ControllerBase
     private readonly IOptions<PasswordExpiryNotificationSettings> _expiryNotif;
     private readonly IExpiryServiceDiagnostics _expiryDiagnostics;
     private readonly ILockoutDiagnostics _lockoutDiagnostics;
+    private readonly IAdConnectivityProbe _adProbe;
     private readonly ILogger<HealthController> _logger;
 
     public HealthController(
@@ -36,6 +36,7 @@ public sealed class HealthController : ControllerBase
         IOptions<PasswordExpiryNotificationSettings> expiryNotif,
         IExpiryServiceDiagnostics expiryDiagnostics,
         ILockoutDiagnostics lockoutDiagnostics,
+        IAdConnectivityProbe adProbe,
         ILogger<HealthController> logger)
     {
         _options            = options;
@@ -44,6 +45,7 @@ public sealed class HealthController : ControllerBase
         _expiryNotif        = expiryNotif;
         _expiryDiagnostics  = expiryDiagnostics;
         _lockoutDiagnostics = lockoutDiagnostics;
+        _adProbe            = adProbe;
         _logger             = logger;
     }
 
@@ -111,48 +113,13 @@ public sealed class HealthController : ControllerBase
 
     private async Task<(string status, long latencyMs)> CheckAdConnectivityAsync()
     {
-        var opts = _options.Value;
-        var sw = Stopwatch.StartNew();
-
-        // When using automatic context, verify the machine is domain-joined.
-        if (opts.UseAutomaticContext)
+        var result = await _adProbe.CheckAsync(HttpContext.RequestAborted);
+        var status = result.Status switch
         {
-            try
-            {
-                using var ctx = new System.DirectoryServices.AccountManagement.PrincipalContext(
-                    System.DirectoryServices.AccountManagement.ContextType.Domain);
-                return ctx.ConnectedServer != null
-                    ? ("healthy", sw.ElapsedMilliseconds)
-                    : ("unhealthy", sw.ElapsedMilliseconds);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "AD health check failed (automatic context)");
-                return ("unhealthy", sw.ElapsedMilliseconds);
-            }
-        }
-
-        // When using explicit credentials, verify at least one LDAP endpoint is reachable.
-        var hostnames = opts.LdapHostnames.Where(h => !string.IsNullOrWhiteSpace(h)).ToArray();
-        if (hostnames.Length == 0)
-            return ("healthy", sw.ElapsedMilliseconds); // No LDAP configured — skip check (debug provider scenario)
-
-        foreach (var host in hostnames)
-        {
-            try
-            {
-                using var cts    = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-                using var client = new TcpClient();
-                await client.ConnectAsync(host, opts.LdapPort, cts.Token);
-                return ("healthy", sw.ElapsedMilliseconds); // At least one DC is reachable
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "AD health check failed for LDAP endpoint {Host}:{Port}", host, opts.LdapPort);
-            }
-        }
-
-        _logger.LogError("AD health check failed — no LDAP endpoints reachable ({Hosts})", string.Join(", ", hostnames));
-        return ("unhealthy", sw.ElapsedMilliseconds);
+            AdProbeStatus.Healthy        => "healthy",
+            AdProbeStatus.NotConfigured  => "healthy",   // debug/unconfigured scenarios
+            _                            => "unhealthy",
+        };
+        return (status, result.LatencyMs);
     }
 }
