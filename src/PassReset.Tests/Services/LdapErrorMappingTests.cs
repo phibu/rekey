@@ -30,4 +30,18 @@ public class LdapErrorMappingTests
         var actual = LdapErrorMapping.Map((ResultCode)999, 0u);
         Assert.Equal(ApiErrorCode.Generic, actual);
     }
+
+    [Theory]
+    [InlineData(null, 0u)]
+    [InlineData("", 0u)]
+    [InlineData("no data token here", 0u)]
+    [InlineData("0000052D: SvcErr: DSID-031A122D, problem 5003 (WILL_NOT_PERFORM), data 52d, 0 pass through", 0x52Du)]
+    [InlineData("0000052D: SvcErr: DSID-031A122D, problem 5003 (WILL_NOT_PERFORM), DATA 775, 0 pass through", 0x775u)]
+    [InlineData("problem 5003 data , rest", 0u)]
+    [InlineData("problem 5003 data FFFFFFFF, rest", 0xFFFFFFFFu)]
+    public void ExtractExtendedError_ReturnsExpectedValue(string? errorMessage, uint expected)
+    {
+        var actual = LdapErrorMapping.ExtractExtendedError(errorMessage);
+        Assert.Equal(expected, actual);
+    }
 }
