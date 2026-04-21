@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace PassReset.Tests.Web.Startup;
+namespace PassReset.Tests.Windows.Web.Startup;
 
 /// <summary>
 /// STAB-016 regression guards for the HTTPS / HSTS wiring in <c>Program.cs</c>.

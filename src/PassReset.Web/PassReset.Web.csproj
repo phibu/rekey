@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="PassReset.Tests" />
+    <InternalsVisibleTo Include="PassReset.Tests.Windows" />
   </ItemGroup>
 
   <ItemGroup>

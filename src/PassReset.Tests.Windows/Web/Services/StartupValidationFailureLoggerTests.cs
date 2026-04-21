@@ -1,7 +1,7 @@
 using System.Reflection;
 using Microsoft.Extensions.Options;
 
-namespace PassReset.Tests.Web.Services;
+namespace PassReset.Tests.Windows.Web.Services;
 
 /// <summary>
 /// Nyquist gap-fill (STAB-011): <see cref="OptionsValidationException"/> logger contract.

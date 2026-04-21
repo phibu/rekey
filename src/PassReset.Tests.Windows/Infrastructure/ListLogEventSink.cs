@@ -1,7 +1,7 @@
 using Serilog.Core;
 using Serilog.Events;
 
-namespace PassReset.Tests.Infrastructure;
+namespace PassReset.Tests.Windows.Infrastructure;
 
 /// <summary>
 /// Handwritten in-memory <see cref="ILogEventSink"/> used by tests to capture

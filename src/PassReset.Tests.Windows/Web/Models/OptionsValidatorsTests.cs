@@ -3,7 +3,7 @@ using PassReset.Common;
 using PassReset.PasswordProvider;
 using PassReset.Web.Models;
 
-namespace PassReset.Tests.Web.Models;
+namespace PassReset.Tests.Windows.Web.Models;
 
 /// <summary>
 /// Unit tests for every <see cref="IValidateOptions{TOptions}"/> validator in

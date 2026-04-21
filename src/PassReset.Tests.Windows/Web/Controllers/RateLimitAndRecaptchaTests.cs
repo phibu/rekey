@@ -7,7 +7,7 @@ using Microsoft.Extensions.Configuration;
 using PassReset.Common;
 using PassReset.Web.Models;
 
-namespace PassReset.Tests.Web.Controllers;
+namespace PassReset.Tests.Windows.Web.Controllers;
 
 /// <summary>
 /// STAB-014 — Integration coverage for the POST /api/password rate-limit and

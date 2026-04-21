@@ -1,6 +1,6 @@
 using System.Net;
 
-namespace PassReset.Tests.Fakes;
+namespace PassReset.Tests.Windows.Fakes;
 
 /// <summary>
 /// Deterministic <see cref="HttpMessageHandler"/> used to drive <see cref="HttpClient"/>

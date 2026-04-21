@@ -1,6 +1,6 @@
 using PassReset.Web.Services;
 
-namespace PassReset.Tests.Web.Services;
+namespace PassReset.Tests.Windows.Web.Services;
 
 public class SiemSyslogFormatterTests
 {

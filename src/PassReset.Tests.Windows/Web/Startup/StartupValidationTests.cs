@@ -4,7 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using PassReset.Web.Models;
 
-namespace PassReset.Tests.Web.Startup;
+namespace PassReset.Tests.Windows.Web.Startup;
 
 /// <summary>
 /// End-to-end validation that <see cref="ValidateOnStart"/> wiring fails fast when

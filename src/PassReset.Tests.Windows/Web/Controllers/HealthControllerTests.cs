@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 
-namespace PassReset.Tests.Web.Controllers;
+namespace PassReset.Tests.Windows.Web.Controllers;
 
 /// <summary>
 /// Integration tests for GET /api/health via <see cref="WebApplicationFactory{TEntryPoint}"/>.

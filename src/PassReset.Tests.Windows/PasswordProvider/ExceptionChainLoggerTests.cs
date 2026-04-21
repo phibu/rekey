@@ -2,12 +2,12 @@ using System.DirectoryServices.AccountManagement;
 using System.Runtime.InteropServices;
 using Microsoft.Extensions.Logging;
 using PassReset.PasswordProvider;
-using PassReset.Tests.Infrastructure;
+using PassReset.Tests.Windows.Infrastructure;
 using Serilog;
 using Serilog.Events;
 using Serilog.Extensions.Logging;
 
-namespace PassReset.Tests.PasswordProvider;
+namespace PassReset.Tests.Windows.PasswordProvider;
 
 public sealed class ExceptionChainLoggerTests
 {

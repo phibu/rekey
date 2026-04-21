@@ -1,8 +1,8 @@
 using System.Net;
 using PassReset.PasswordProvider;
-using PassReset.Tests.Fakes;
+using PassReset.Tests.Windows.Fakes;
 
-namespace PassReset.Tests.PasswordProvider;
+namespace PassReset.Tests.Windows.PasswordProvider;
 
 /// <summary>
 /// Exercises the HIBP k-anonymity client end-to-end against a <see cref="FakeHttpMessageHandler"/>

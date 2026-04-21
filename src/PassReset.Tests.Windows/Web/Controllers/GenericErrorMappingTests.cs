@@ -14,7 +14,7 @@ using PassReset.Web.Helpers;
 using PassReset.Web.Models;
 using PassReset.Web.Services;
 
-namespace PassReset.Tests.Web.Controllers;
+namespace PassReset.Tests.Windows.Web.Controllers;
 
 /// <summary>
 /// STAB-013 — Proves that POST /api/password collapses account-enumeration error codes

@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using PassReset.Web.Services;
 
-namespace PassReset.Tests.Web.Services;
+namespace PassReset.Tests.Windows.Web.Services;
 
 /// <summary>
 /// STAB-015 (D-10): Reflection-based proofs that <see cref="AuditEvent"/> is a

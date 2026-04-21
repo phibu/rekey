@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 using PassReset.Web.Models;
 using Xunit;
 
-namespace PassReset.Tests.Web.Startup;
+namespace PassReset.Tests.Windows.Web.Startup;
 
 /// <summary>
 /// WR-03: xUnit v3 parallelizes test classes by default. Because this class mutates

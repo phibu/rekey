@@ -9,13 +9,13 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using PassReset.Common;
 using PassReset.PasswordProvider;
-using PassReset.Tests.Infrastructure;
+using PassReset.Tests.Windows.Infrastructure;
 using PassReset.Web.Models;
 using Serilog;
 using Serilog.Events;
 using Serilog.Extensions.Logging;
 
-namespace PassReset.Tests.PasswordProvider;
+namespace PassReset.Tests.Windows.PasswordProvider;
 
 /// <summary>
 /// Sentinel-plaintext coverage: verifies that no password value (current or new)

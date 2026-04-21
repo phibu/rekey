@@ -2,7 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using PassReset.Common;
 using PassReset.Web.Models;
 
-namespace PassReset.Tests.Web.Models;
+namespace PassReset.Tests.Windows.Web.Models;
 
 public class ChangePasswordModelValidationTests
 {

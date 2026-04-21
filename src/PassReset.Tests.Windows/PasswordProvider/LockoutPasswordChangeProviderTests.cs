@@ -3,7 +3,7 @@ using Microsoft.Extensions.Options;
 using PassReset.Common;
 using PassReset.PasswordProvider;
 
-namespace PassReset.Tests.PasswordProvider;
+namespace PassReset.Tests.Windows.PasswordProvider;
 
 /// <summary>
 /// Verifies the per-username portal lockout decorator: threshold upgrade to

@@ -1,9 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!-- Cross-platform test project (Phase 11). Windows-only tests were extracted to
-         PassReset.Tests.Windows in Task 15. This project targets plain net10.0 so the
-         Linux CI job can build and run it. -->
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- Phase 11, Task 15: Windows-only test project. Houses tests that reference
+         PassReset.PasswordProvider (net10.0-windows via System.DirectoryServices.AccountManagement)
+         or PassReset.Web (net10.0-windows host). Cross-platform tests live in PassReset.Tests. -->
+    <TargetFramework>net10.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
@@ -13,13 +13,10 @@
   <PropertyGroup Condition="'$(CollectCoverage)' == 'true'">
     <CoverletOutputFormat>cobertura</CoverletOutputFormat>
     <CoverletOutput>$(MSBuildProjectDirectory)/TestResults/coverage.cobertura.xml</CoverletOutput>
-    <!-- Honest baseline thresholds. Plan target was 55/45 but PasswordChangeProvider
-         (the bulk of the uncovered surface) requires extensive LDAP mocking that was
-         out of scope for this phase. Raise these as coverage grows. -->
     <Threshold>20</Threshold>
     <ThresholdType>line,branch</ThresholdType>
     <ThresholdStat>total</ThresholdStat>
-    <Exclude>[xunit.*]*,[*.Tests]*</Exclude>
+    <Exclude>[xunit.*]*,[*.Tests]*,[*.Tests.Windows]*</Exclude>
     <ExcludeByFile>**/Program.cs,**/obj/**,**/bin/**</ExcludeByFile>
   </PropertyGroup>
   <ItemGroup>
@@ -34,11 +31,14 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="NSubstitute" Version="5.3.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.*" />
     <PackageReference Include="Serilog" Version="4.3.0" />
     <PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PassReset.Common\PassReset.Common.csproj" />
+    <ProjectReference Include="..\PassReset.PasswordProvider\PassReset.PasswordProvider.csproj" />
     <ProjectReference Include="..\PassReset.PasswordProvider.Ldap\PassReset.PasswordProvider.Ldap.csproj" />
+    <ProjectReference Include="..\PassReset.Web\PassReset.Web.csproj" />
   </ItemGroup>
 </Project>

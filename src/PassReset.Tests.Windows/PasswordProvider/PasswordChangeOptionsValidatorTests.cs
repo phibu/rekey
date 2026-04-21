@@ -1,7 +1,7 @@
 using PassReset.Common;
 using PassReset.PasswordProvider;
 
-namespace PassReset.Tests.PasswordProvider;
+namespace PassReset.Tests.Windows.PasswordProvider;
 
 public class PasswordChangeOptionsValidatorTests
 {

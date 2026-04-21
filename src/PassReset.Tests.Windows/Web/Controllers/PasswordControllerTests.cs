@@ -7,7 +7,7 @@ using Microsoft.Extensions.Configuration;
 using PassReset.Common;
 using PassReset.Web.Models;
 
-namespace PassReset.Tests.Web.Controllers;
+namespace PassReset.Tests.Windows.Web.Controllers;
 
 /// <summary>
 /// Integration tests for POST /api/password via <see cref="WebApplicationFactory{TEntryPoint}"/>.

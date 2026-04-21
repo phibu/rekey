@@ -4,7 +4,7 @@ using Microsoft.Extensions.Options;
 using PassReset.Web.Models;
 using PassReset.Web.Services;
 
-namespace PassReset.Tests.Services;
+namespace PassReset.Tests.Windows.Services;
 
 /// <summary>
 /// Unit tests for the <see cref="IExpiryServiceDiagnostics"/> contract exposed by
