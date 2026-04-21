@@ -21,6 +21,7 @@ public sealed class FakeLdapSession : ILdapSession
 {
     private readonly List<SearchRule> _searchRules = new();
     private readonly List<ModifyRule> _modifyRules = new();
+    private SearchResponse? _defaultSearchResponse;
 
     public SearchResultEntry? RootDse { get; set; }
 
@@ -56,16 +57,44 @@ public sealed class FakeLdapSession : ILdapSession
         return this;
     }
 
+    /// <summary>
+    /// Sets a catch-all <see cref="SearchResponse"/> used when no registered rule matches
+    /// the incoming filter. Without a default, <see cref="Search"/> throws —
+    /// which is the right behavior for targeted unit tests but not for the
+    /// shared contract suite, where an "unknown user" scenario needs all three
+    /// AllowedUsernameAttributes filters to miss without forcing each caller
+    /// to register the exact same "empty" rule three times.
+    /// </summary>
+    public FakeLdapSession DefaultSearchResponse(SearchResponse response)
+    {
+        _defaultSearchResponse = response;
+        return this;
+    }
+
     public FakeLdapSession OnModify(string dnContains, ModifyResponse response)
     {
-        _modifyRules.Add(new ModifyRule(dnContains, response, null));
+        _modifyRules.Add(new ModifyRule(dnContains, response, null, null));
         return this;
     }
 
     public FakeLdapSession OnModifyThrow(string dnContains, Exception ex)
     {
         ArgumentNullException.ThrowIfNull(ex);
-        _modifyRules.Add(new ModifyRule(dnContains, null, ex));
+        _modifyRules.Add(new ModifyRule(dnContains, null, ex, null));
+        return this;
+    }
+
+    /// <summary>
+    /// Registers a credential-aware Modify rule: the callback is invoked with the
+    /// incoming <see cref="ModifyRequest"/> and returns the <see cref="ModifyResponse"/>
+    /// to emit. Used by contract tests to distinguish right-vs-wrong current-password
+    /// by inspecting the Delete(unicodePwd) bytes of the AD atomic change-password
+    /// payload. First matching rule wins, same as <see cref="OnModify"/>.
+    /// </summary>
+    public FakeLdapSession OnModifyIf(string dnContains, Func<ModifyRequest, ModifyResponse> responder)
+    {
+        ArgumentNullException.ThrowIfNull(responder);
+        _modifyRules.Add(new ModifyRule(dnContains, null, null, responder));
         return this;
     }
 
@@ -82,6 +111,7 @@ public sealed class FakeLdapSession : ILdapSession
                 return rule.Response!;
             }
         }
+        if (_defaultSearchResponse is not null) return _defaultSearchResponse;
         throw new InvalidOperationException(
             $"FakeLdapSession: no matching SearchRule for filter='{filterText}'. Register one via OnSearch(...).");
     }
@@ -95,6 +125,7 @@ public sealed class FakeLdapSession : ILdapSession
             if (request.DistinguishedName.Contains(rule.DnContains, StringComparison.OrdinalIgnoreCase))
             {
                 if (rule.Throw is not null) throw rule.Throw;
+                if (rule.Responder is not null) return rule.Responder(request);
                 return rule.Response!;
             }
         }
@@ -105,5 +136,9 @@ public sealed class FakeLdapSession : ILdapSession
     public void Dispose() { }
 
     private sealed record SearchRule(string FilterContains, SearchResponse? Response, Exception? Throw);
-    private sealed record ModifyRule(string DnContains, ModifyResponse? Response, Exception? Throw);
+    private sealed record ModifyRule(
+        string DnContains,
+        ModifyResponse? Response,
+        Exception? Throw,
+        Func<ModifyRequest, ModifyResponse>? Responder);
 }

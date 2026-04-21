@@ -40,5 +40,10 @@
     <ProjectReference Include="..\PassReset.PasswordProvider\PassReset.PasswordProvider.csproj" />
     <ProjectReference Include="..\PassReset.PasswordProvider.Ldap\PassReset.PasswordProvider.Ldap.csproj" />
     <ProjectReference Include="..\PassReset.Web\PassReset.Web.csproj" />
+    <!-- Phase 11, Task 16: reference the cross-platform test project so the Windows
+         contract test can derive from the shared IPasswordChangeProviderContract
+         base class. xUnit v3 only discovers tests in the project's own output
+         assembly, so this does NOT double-run the cross-platform suite. -->
+    <ProjectReference Include="..\PassReset.Tests\PassReset.Tests.csproj" />
   </ItemGroup>
 </Project>
