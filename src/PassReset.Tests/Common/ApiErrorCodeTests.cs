@@ -31,6 +31,8 @@ public class ApiErrorCodeTests
     [InlineData(ApiErrorCode.PortalLockout, 17)]
     [InlineData(ApiErrorCode.ApproachingLockout, 18)]
     [InlineData(ApiErrorCode.PasswordTooRecentlyChanged, 19)]
+    [InlineData(ApiErrorCode.BannedWord, 20)]
+    [InlineData(ApiErrorCode.LocallyKnownPwned, 21)]
     public void ErrorCode_HasStableNumericValue(ApiErrorCode code, int expectedValue)
     {
         Assert.Equal(expectedValue, (int)code);
@@ -50,7 +52,7 @@ public class ApiErrorCodeTests
         // If you add an entry to ApiErrorCode, update this test plus the TypeScript mirror in
         // ClientApp/src/types/settings.ts. Keeping a count check catches accidental deletions.
         var values = Enum.GetValues<ApiErrorCode>();
-        Assert.Equal(20, values.Length);
+        Assert.Equal(22, values.Length);
     }
 
     [Fact]
