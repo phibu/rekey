@@ -71,4 +71,17 @@ public enum ApiErrorCode
     /// <see cref="PasswordTooYoung"/> which is the portal-side pre-check.
     /// </summary>
     PasswordTooRecentlyChanged = 19,
+
+    /// <summary>
+    /// The new password matched a term in the operator-configured banned-words list.
+    /// Rejected by <c>LocalPolicyPasswordChangeProvider</c> before any AD round-trip.
+    /// </summary>
+    BannedWord = 20,
+
+    /// <summary>
+    /// The new password appeared in the operator-hosted local HIBP SHA-1 corpus.
+    /// Rejected by <c>LocalPolicyPasswordChangeProvider</c>. Distinct from <see cref="PwnedPassword"/>,
+    /// which is returned by the remote HIBP API path.
+    /// </summary>
+    LocallyKnownPwned = 21,
 }

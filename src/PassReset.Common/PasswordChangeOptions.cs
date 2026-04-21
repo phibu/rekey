@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using PassReset.Common.LocalPolicy;
 
 namespace PassReset.Common;
 
@@ -181,6 +182,14 @@ public class PasswordChangeOptions : IAppSettings
     /// Example: <c>{samaccountname}@{defaultdomain}</c>
     /// </summary>
     public string NotificationEmailTemplate { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Operator-managed local password-policy settings: banned-words list and optional
+    /// bulk HIBP SHA-1 corpus. See <see cref="LocalPolicyOptions"/>. Null-safe: when
+    /// the whole section is absent from configuration, defaults apply (both paths null,
+    /// <see cref="LocalPolicyOptions.MinBannedTermLength"/> = 4).
+    /// </summary>
+    public LocalPolicyOptions LocalPolicy { get; set; } = new();
 }
 
 /// <summary>

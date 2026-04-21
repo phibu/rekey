@@ -19,15 +19,24 @@ public sealed class PwnedPasswordChecker : IPwnedPasswordChecker
 
     private readonly HttpClient _http;
     private readonly ILogger<PwnedPasswordChecker>? _logger;
+    private readonly bool _disabled;
 
     /// <summary>
     /// Creates a new checker using the injected <see cref="HttpClient"/>.
     /// Callers must configure a reasonable BaseAddress / Timeout on the underlying client.
     /// </summary>
-    public PwnedPasswordChecker(HttpClient http, ILogger<PwnedPasswordChecker>? logger = null)
+    /// <param name="http">The HTTP client used to call the HIBP k-anonymity API.</param>
+    /// <param name="logger">Optional logger for diagnostic output.</param>
+    /// <param name="disabled">
+    /// When <see langword="true"/>, <see cref="IsPwnedPasswordAsync"/> short-circuits to
+    /// <see langword="null"/> (not-pwned) without making any HTTP request.
+    /// Use this when a local HIBP corpus is authoritative (e.g., air-gapped networks).
+    /// </param>
+    public PwnedPasswordChecker(HttpClient http, ILogger<PwnedPasswordChecker>? logger = null, bool disabled = false)
     {
         _http = http;
         _logger = logger;
+        _disabled = disabled;
     }
 
     /// <summary>
@@ -71,6 +80,14 @@ public sealed class PwnedPasswordChecker : IPwnedPasswordChecker
     /// </summary>
     public async Task<bool?> IsPwnedPasswordAsync(string plaintext)
     {
+        if (_disabled)
+        {
+            // Disabled by configuration (local HIBP corpus is authoritative).
+            // Treat as "not pwned" (false) — NOT ambiguous (null) — so callers that
+            // fail-closed on null still allow the change.
+            return false;
+        }
+
         var hash = ComputeSha1Hex(plaintext).ToUpperInvariant();
         var prefix = hash[..5];
         var suffix = hash[5..];

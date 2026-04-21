@@ -80,10 +80,20 @@ try
     // Registered against both the concrete type (for PasswordChangeProvider's existing
     // constructor dependency) and the IPwnedPasswordChecker interface (for the new
     // pwned-check controller endpoint — FEAT-004).
-    builder.Services.AddHttpClient<PwnedPasswordChecker>(c =>
+    // Phase 12: pass disabled=true when LocalPwnedPasswordsPath is configured so the
+    // remote HIBP API is not called when a local corpus is authoritative.
+    builder.Services.AddHttpClient("pwned", c =>
     {
         c.BaseAddress = new Uri("https://api.pwnedpasswords.com/");
         c.Timeout = TimeSpan.FromSeconds(5);
+    });
+    builder.Services.AddSingleton<PwnedPasswordChecker>(sp =>
+    {
+        var opts = sp.GetRequiredService<IOptions<PasswordChangeOptions>>().Value;
+        var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("pwned");
+        var logger = sp.GetRequiredService<ILogger<PwnedPasswordChecker>>();
+        var disabled = !string.IsNullOrWhiteSpace(opts.LocalPolicy?.LocalPwnedPasswordsPath);
+        return new PwnedPasswordChecker(http, logger, disabled: disabled);
     });
     builder.Services.AddTransient<IPwnedPasswordChecker>(sp =>
         sp.GetRequiredService<PwnedPasswordChecker>());
@@ -251,8 +261,19 @@ try
     }
 #endif
 
+    // ─── LocalPolicy checkers (Phase 12) ─────────────────────────────────────────
+    builder.Services.AddSingleton<PassReset.Common.LocalPolicy.BannedWordsChecker>();
+    builder.Services.AddSingleton<PassReset.Common.LocalPolicy.LocalPwnedPasswordsChecker>();
+
+    // Chain: LocalPolicyPasswordChangeProvider( LockoutPasswordChangeProvider( core ) )
     builder.Services.AddSingleton<IPasswordChangeProvider>(sp =>
-        sp.GetRequiredService<LockoutPasswordChangeProvider>());
+    {
+        var lockout = sp.GetRequiredService<LockoutPasswordChangeProvider>();
+        var banned  = sp.GetRequiredService<PassReset.Common.LocalPolicy.BannedWordsChecker>();
+        var pwned   = sp.GetRequiredService<PassReset.Common.LocalPolicy.LocalPwnedPasswordsChecker>();
+        var log     = sp.GetRequiredService<ILogger<PassReset.Common.LocalPolicy.LocalPolicyPasswordChangeProvider>>();
+        return new PassReset.Common.LocalPolicy.LocalPolicyPasswordChangeProvider(lockout, banned, pwned, log);
+    });
     builder.Services.AddSingleton<ILockoutDiagnostics>(sp =>
         sp.GetRequiredService<LockoutPasswordChangeProvider>());
 

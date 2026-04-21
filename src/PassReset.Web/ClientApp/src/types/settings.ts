@@ -143,4 +143,6 @@ export const ApiErrorCode = {
   PortalLockout: 17,
   ApproachingLockout: 18,
   PasswordTooRecentlyChanged: 19,
+  BannedWord: 20,
+  LocallyKnownPwned: 21,
 } as const;

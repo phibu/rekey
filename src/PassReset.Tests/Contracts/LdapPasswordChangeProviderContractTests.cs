@@ -3,6 +3,7 @@ using System.Reflection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using PassReset.Common;
+using PassReset.Common.LocalPolicy;
 using PassReset.PasswordProvider.Ldap;
 using PassReset.Tests.Fakes;
 
@@ -112,6 +113,26 @@ public sealed class LdapPasswordChangeProviderContractTests : IPasswordChangePro
         });
 
         return new TestUser(username, currentPassword);
+    }
+
+    protected override IPasswordChangeProvider SeedBannedWord(string term)
+    {
+        // Write a temp banned-words file containing the given term, then wrap the
+        // inner LDAP provider with LocalPolicyPasswordChangeProvider pointed at that file.
+        var path = Path.Combine(Path.GetTempPath(), $"banned_{Guid.NewGuid():N}.txt");
+        File.WriteAllText(path, term);
+
+        var localOpts = new LocalPolicyOptions { BannedWordsPath = path };
+        var banned = new BannedWordsChecker(localOpts, NullLogger<BannedWordsChecker>.Instance);
+        var pwned = new LocalPwnedPasswordsChecker(
+            new LocalPolicyOptions { LocalPwnedPasswordsPath = null },
+            NullLogger<LocalPwnedPasswordsChecker>.Instance);
+
+        return new LocalPolicyPasswordChangeProvider(
+            CreateProvider(),
+            banned,
+            pwned,
+            NullLogger<LocalPolicyPasswordChangeProvider>.Instance);
     }
 
     // ---- helpers -----------------------------------------------------------

@@ -39,6 +39,7 @@ AD-Passreset-Portal is a self‑service Active Directory password change portal 
 | Rate limiting | 5 requests per 5 minutes per IP address |
 | Security headers | CSP, HSTS, X-Frame-Options DENY, nosniff, Referrer-Policy |
 | Debug mode | Test the full UI without an AD connection |
+| Optional offline password policy | Operator-managed banned-words list + bulk HIBP SHA-1 corpus for air-gapped lookups ([setup](docs/LocalPasswordPolicy-Setup.md)) |
 
 ---
 

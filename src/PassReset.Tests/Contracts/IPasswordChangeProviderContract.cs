@@ -1,4 +1,5 @@
 using PassReset.Common;
+using PassReset.Common.LocalPolicy;
 using Xunit;
 
 namespace PassReset.Tests.Contracts;
@@ -35,6 +36,13 @@ public abstract class IPasswordChangeProviderContract
     /// value surfaces <see cref="ApiErrorCode.InvalidCredentials"/>).
     /// </summary>
     protected abstract TestUser SeedUser(string username, string currentPassword);
+
+    /// <summary>
+    /// Reconstructs <see cref="Sut"/> so that <paramref name="term"/> is in the
+    /// banned-words list used by the outermost LocalPolicy decorator. Implementations
+    /// write a banned-words file and rebuild the DI chain.
+    /// </summary>
+    protected abstract IPasswordChangeProvider SeedBannedWord(string term);
 
     protected sealed record TestUser(string Username, string Password);
 
@@ -127,5 +135,18 @@ public abstract class IPasswordChangeProviderContract
 
         Assert.NotNull(result);
         Assert.Equal(ApiErrorCode.ComplexPassword, result!.ErrorCode);
+    }
+
+    [Fact]
+    public virtual async Task LocalBannedWord_ReturnsBannedWord()
+    {
+        var user = SeedUser("alice", "CorrectPass1!");
+        var provider = SeedBannedWord("acme");
+
+        var result = await provider.PerformPasswordChangeAsync(
+            user.Username, user.Password, "ACMErocks42!");
+
+        Assert.NotNull(result);
+        Assert.Equal(ApiErrorCode.BannedWord, result!.ErrorCode);
     }
 }
