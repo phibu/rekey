@@ -1,0 +1,14 @@
+{
+  "_comment": "Copy to appsettings.IntegrationTest.json (gitignored) and fill real values. Env vars prefixed PASSRESET_ override these keys.",
+  "PasswordChangeOptions": {
+    "ProviderMode": "Ldap",
+    "LdapHostnames": [ "localhost" ],
+    "LdapPort": 636,
+    "LdapUseSsl": true,
+    "BaseDn": "DC=samdom,DC=example,DC=com",
+    "ServiceAccountDn": "CN=Administrator,CN=Users,DC=samdom,DC=example,DC=com",
+    "ServiceAccountPassword": "will be injected from env",
+    "AllowedUsernameAttributes": [ "samaccountname" ],
+    "LdapTrustedCertificateThumbprints": []
+  }
+}

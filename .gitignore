@@ -42,6 +42,9 @@ secrets.json
 *.pfx
 *.p12
 
+# Phase 11: integration test local config (secrets)
+src/PassReset.Tests.Integration.Ldap/appsettings.IntegrationTest.json
+
 # ── Personal scratch files ───────────────────────────────────────────────────
 Todo.MD
 

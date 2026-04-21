@@ -159,3 +159,102 @@ jobs:
           "Scanned: npm (Node 22 / npm 10+) + dotnet NuGet packages" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "Gate: high + critical only; moderate/low printed as warnings" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
           "Allowlist: deploy/security-allowlist.json (entries expire <=90 days)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+
+  # Phase 11 Task 20: LDAP integration smoke test against a real Samba AD DC.
+  # Warning-only (continue-on-error: true) until stable. Runs on Linux because the
+  # integration project targets plain net10.0 and Samba ships a Linux container.
+  # Requires repo secrets: SAMBA_DOMAIN_PASSWORD, SAMBA_TEST_OLD_PASSWORD, SAMBA_TEST_NEW_PASSWORD.
+  integration-tests-ldap:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      # nowsci/samba-domain is a drop-in replacement for the retired diginc/samba-ad-dc:
+      # identical DOMAIN/DOMAINPASS/DNSFORWARDER env vars, real AD DC mode with LDAPS on 636,
+      # auto-rebuilt monthly. Runner-up if this disappears: instantlinux/samba-dc (needs env var
+      # rename to REALM/NETBIOS_NAME and network_mode:host — more rewriting).
+      samba-dc:
+        image: nowsci/samba-domain:latest
+        ports:
+          - 389:389
+          - 636:636
+        env:
+          # nowsci expects DOMAIN to be a dotted FQDN realm (NOT a short NetBIOS name —
+          # samba-tool refuses realm==netbios). Must match the BaseDn components our
+          # integration test config uses (DC=samdom,DC=example,DC=com).
+          DOMAIN: SAMDOM.EXAMPLE.COM
+          DOMAINPASS: ${{ secrets.SAMBA_DOMAIN_PASSWORD }}
+          DNSFORWARDER: 8.8.8.8
+          # Phase 11 smoke-test ergonomics: strip AD's default complexity + min-pwd-age
+          # so short seeded passwords (OldPass1!/NewPass1!) aren't rejected.
+          NOCOMPLEXITY: "true"
+          # Self-signed cert isn't in the runner's trust store; INSECURELDAP lets the
+          # container accept plain LDAP on 389 so the test client doesn't need cert work.
+          INSECURELDAP: "true"
+        # SYS_ADMIN + NET_ADMIN: nowsci's first-boot samba_provision needs elevated perms.
+        # health-retries bumped to 20 because nowsci's first-run provisioning takes ~30-60s
+        # (vs diginc's ~10s).
+        options: >-
+          --cap-add SYS_ADMIN
+          --cap-add NET_ADMIN
+          --health-cmd "pidof samba"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PASSRESET_INTEGRATION_LDAP: "1"
+      PASSRESET_PasswordChangeOptions__ServiceAccountPassword: ${{ secrets.SAMBA_DOMAIN_PASSWORD }}
+      # Override JSON config to match what the nowsci container exposes with INSECURELDAP=true
+      # (plain LDAP on 389 — no cert-trust dance in CI).
+      PASSRESET_PasswordChangeOptions__LdapPort: "389"
+      PASSRESET_PasswordChangeOptions__LdapUseSsl: "false"
+      # Array-binding pattern: indexed key per element.
+      PASSRESET_PasswordChangeOptions__LdapHostnames__0: "localhost"
+      PASSRESET_PasswordChangeOptions__BaseDn: "DC=samdom,DC=example,DC=com"
+      PASSRESET_PasswordChangeOptions__ServiceAccountDn: "CN=Administrator,CN=Users,DC=samdom,DC=example,DC=com"
+      PASSRESET_PasswordChangeOptions__AllowedUsernameAttributes__0: "samaccountname"
+      PASSRESET_TEST_USERNAME: "testuser"
+      PASSRESET_TEST_OLD_PASSWORD: ${{ secrets.SAMBA_TEST_OLD_PASSWORD }}
+      PASSRESET_TEST_NEW_PASSWORD: ${{ secrets.SAMBA_TEST_NEW_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v6.0.2
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5.2.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Wait for Samba DC LDAP port
+        run: |
+          for i in {1..30}; do
+            nc -z localhost 389 && break
+            sleep 2
+          done
+
+      - name: Verify secret lengths (lengths are not sensitive)
+        env:
+          DOMAINPASS_LEN: ${{ secrets.SAMBA_DOMAIN_PASSWORD }}
+          TESTOLD_LEN: ${{ secrets.SAMBA_TEST_OLD_PASSWORD }}
+          TESTNEW_LEN: ${{ secrets.SAMBA_TEST_NEW_PASSWORD }}
+        run: |
+          echo "SAMBA_DOMAIN_PASSWORD length: ${#DOMAINPASS_LEN}"
+          echo "SAMBA_TEST_OLD_PASSWORD length: ${#TESTOLD_LEN}"
+          echo "SAMBA_TEST_NEW_PASSWORD length: ${#TESTNEW_LEN}"
+          if [ -z "$TESTOLD_LEN" ]; then echo "::error::SAMBA_TEST_OLD_PASSWORD is empty"; exit 1; fi
+          if [ -z "$TESTNEW_LEN" ]; then echo "::error::SAMBA_TEST_NEW_PASSWORD is empty"; exit 1; fi
+          if [ -z "$DOMAINPASS_LEN" ]; then echo "::error::SAMBA_DOMAIN_PASSWORD is empty"; exit 1; fi
+
+      - name: Seed test user
+        env:
+          TEST_OLD: ${{ secrets.SAMBA_TEST_OLD_PASSWORD }}
+        run: |
+          # samba-tool user create uses positional <username> <password> args.
+          # The --newpassword flag is for 'user setpassword', not 'user create'.
+          docker exec ${{ job.services.samba-dc.id }} samba-tool user create \
+            testuser \
+            "$TEST_OLD" \
+            --given-name=Test \
+            --surname=User
+
+      - name: Run LDAP integration tests
+        working-directory: src/PassReset.Tests.Integration.Ldap
+        run: dotnet test -c Release --logger "console;verbosity=detailed"

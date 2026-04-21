@@ -4,6 +4,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Options;
 using PassReset.Common;
 using PassReset.PasswordProvider;
+using PassReset.PasswordProvider.Ldap;
 using PassReset.Web.Helpers;
 using PassReset.Web.Middleware;
 using PassReset.Web.Models;
@@ -138,6 +139,19 @@ try
             "PortalLockoutThreshold is {Threshold} (>= 10). This is unusually high and may indicate a misconfiguration. Typical values are 3-5.",
             passwordChangeOptions.PortalLockoutThreshold);
 
+    // Phase 11: ProviderMode-based selection (Auto | Windows | Ldap).
+    // Note: ProviderMode is captured at startup from a configuration snapshot; changing it
+    // requires an app restart. DI registrations are resolved once and will not respond to
+    // IOptionsMonitor reloads of PasswordChangeOptions.
+    var effectiveProvider = passwordChangeOptions.ProviderMode switch
+    {
+        ProviderMode.Windows => WiringTarget.Windows,
+        ProviderMode.Ldap    => WiringTarget.Ldap,
+        ProviderMode.Auto    => OperatingSystem.IsWindows() ? WiringTarget.Windows : WiringTarget.Ldap,
+        _                    => throw new InvalidOperationException(
+                                    $"Unknown PasswordChangeOptions.ProviderMode: {passwordChangeOptions.ProviderMode}"),
+    };
+
     if (webSettings.UseDebugProvider)
     {
         builder.Services.AddSingleton<DebugPasswordChangeProvider>();
@@ -146,15 +160,57 @@ try
                 sp.GetRequiredService<DebugPasswordChangeProvider>(),
                 sp.GetRequiredService<IOptions<PasswordChangeOptions>>(),
                 sp.GetRequiredService<ILogger<LockoutPasswordChangeProvider>>()));
-        builder.Services.AddSingleton<IPasswordChangeProvider>(sp =>
-            sp.GetRequiredService<LockoutPasswordChangeProvider>());
-        builder.Services.AddSingleton<ILockoutDiagnostics>(sp =>
-            sp.GetRequiredService<LockoutPasswordChangeProvider>());
         builder.Services.AddSingleton<IEmailService, NoOpEmailService>();
         // Expiry service is never wired in debug mode — diagnostics report "not-enabled".
         builder.Services.AddSingleton<IExpiryServiceDiagnostics>(new NullExpiryServiceDiagnostics());
     }
-    else
+    else if (effectiveProvider == WiringTarget.Ldap)
+    {
+        // Session factory per password-change request (no pooling — low frequency).
+        builder.Services.AddSingleton<Func<ILdapSession>>(sp =>
+        {
+            var opts = sp.GetRequiredService<IOptions<PasswordChangeOptions>>().Value;
+            // Belt-and-suspenders: PasswordChangeOptionsValidator already enforces non-empty
+            // LdapHostnames when ProviderMode resolves to Ldap at startup. This defensive
+            // check surfaces a clear, actionable error if the options are ever reloaded
+            // into an invalid state before the factory fires.
+            if (opts.LdapHostnames is null || opts.LdapHostnames.Length == 0)
+            {
+                throw new InvalidOperationException(
+                    "PasswordChangeOptions.LdapHostnames must contain at least one hostname when ProviderMode=Ldap.");
+            }
+            var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+            return () => new LdapSession(
+                hostname: opts.LdapHostnames[0],
+                port: opts.LdapPort,
+                useLdaps: opts.LdapUseSsl,
+                serviceAccountDn: opts.ServiceAccountDn,
+                serviceAccountPassword: opts.ServiceAccountPassword,
+                trustedThumbprints: opts.LdapTrustedCertificateThumbprints,
+                logger: loggerFactory.CreateLogger<LdapSession>());
+        });
+        builder.Services.AddSingleton<LdapPasswordChangeProvider>();
+        builder.Services.AddSingleton<LockoutPasswordChangeProvider>(sp =>
+            new LockoutPasswordChangeProvider(
+                sp.GetRequiredService<LdapPasswordChangeProvider>(),
+                sp.GetRequiredService<IOptions<PasswordChangeOptions>>(),
+                sp.GetRequiredService<ILogger<LockoutPasswordChangeProvider>>()));
+        builder.Services.AddTransient<IEmailService, SmtpEmailService>();
+
+        if (expirySettings.Enabled)
+        {
+            builder.Services.AddSingleton<PasswordExpiryNotificationService>();
+            builder.Services.AddHostedService(sp => sp.GetRequiredService<PasswordExpiryNotificationService>());
+            builder.Services.AddSingleton<IExpiryServiceDiagnostics>(sp =>
+                sp.GetRequiredService<PasswordExpiryNotificationService>());
+        }
+        else
+        {
+            builder.Services.AddSingleton<IExpiryServiceDiagnostics>(new NullExpiryServiceDiagnostics());
+        }
+    }
+#if WINDOWS_PROVIDER
+    else  // effectiveProvider == WiringTarget.Windows
     {
         builder.Services.AddSingleton<PasswordChangeProvider>();
         builder.Services.AddSingleton<LockoutPasswordChangeProvider>(sp =>
@@ -162,10 +218,6 @@ try
                 sp.GetRequiredService<PasswordChangeProvider>(),
                 sp.GetRequiredService<IOptions<PasswordChangeOptions>>(),
                 sp.GetRequiredService<ILogger<LockoutPasswordChangeProvider>>()));
-        builder.Services.AddSingleton<IPasswordChangeProvider>(sp =>
-            sp.GetRequiredService<LockoutPasswordChangeProvider>());
-        builder.Services.AddSingleton<ILockoutDiagnostics>(sp =>
-            sp.GetRequiredService<LockoutPasswordChangeProvider>());
         builder.Services.AddTransient<IEmailService, SmtpEmailService>();
 
         if (expirySettings.Enabled)
@@ -182,6 +234,19 @@ try
             builder.Services.AddSingleton<IExpiryServiceDiagnostics>(new NullExpiryServiceDiagnostics());
         }
     }
+#else
+    else
+    {
+        throw new InvalidOperationException(
+            "PasswordChangeOptions.ProviderMode resolved to Windows, but this build does not include the Windows provider. " +
+            "Rebuild on Windows or set ProviderMode to Ldap.");
+    }
+#endif
+
+    builder.Services.AddSingleton<IPasswordChangeProvider>(sp =>
+        sp.GetRequiredService<LockoutPasswordChangeProvider>());
+    builder.Services.AddSingleton<ILockoutDiagnostics>(sp =>
+        sp.GetRequiredService<LockoutPasswordChangeProvider>());
 
     // ─── SIEM service ─────────────────────────────────────────────────────────────
     builder.Services.AddSingleton<ISiemService, SiemService>();
@@ -332,3 +397,6 @@ catch (OptionsValidationException ex)
 // Marker type to allow WebApplicationFactory<Program> in test projects.
 // Top-level programs generate an internal Program class; this makes it public.
 public partial class Program { }
+
+// Phase 11: compile-time wiring target resolved from PasswordChangeOptions.ProviderMode.
+internal enum WiringTarget { Windows, Ldap }

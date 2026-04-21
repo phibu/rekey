@@ -1,20 +1,36 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- Phase 11: conditional TFM. On Windows we stay on net10.0-windows so the Web host
+         can reference the Windows-only PasswordChangeProvider (System.DirectoryServices.
+         AccountManagement). On Linux/macOS CI we fall back to plain net10.0 and wire only
+         the LDAP provider. The WINDOWS_PROVIDER symbol (below) gates compile-time usage. -->
+    <TargetFramework Condition="'$(OS)' == 'Windows_NT'">net10.0-windows</TargetFramework>
+    <TargetFramework Condition="'$(OS)' != 'Windows_NT'">net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- Version is overridden at publish time via /p:Version=x.y.z -->
     <Version>0.0.0-dev</Version>
   </PropertyGroup>
 
+  <!-- WINDOWS_PROVIDER scopes compile-time wiring of the Windows-only provider. -->
+  <PropertyGroup Condition="'$(OS)' == 'Windows_NT'">
+    <DefineConstants>$(DefineConstants);WINDOWS_PROVIDER</DefineConstants>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\PassReset.Common\PassReset.Common.csproj" />
+    <ProjectReference Include="..\PassReset.PasswordProvider.Ldap\PassReset.PasswordProvider.Ldap.csproj" />
+  </ItemGroup>
+
+  <!-- Windows-only provider reference — compiled in only on Windows builds. -->
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
     <ProjectReference Include="..\PassReset.PasswordProvider\PassReset.PasswordProvider.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="PassReset.Tests" />
+    <InternalsVisibleTo Include="PassReset.Tests.Windows" />
   </ItemGroup>
 
   <ItemGroup>

@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Threading;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using PassReset.Common;
 using PassReset.PasswordProvider;
 using PassReset.Web.Models;
 using PassReset.Web.Services;

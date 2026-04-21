@@ -67,3 +67,8 @@ jobs:
   tests:
     needs: build
     uses: ./.github/workflows/tests.yml
+    # Pass secrets to the reusable workflow. Required by the Phase 11
+    # integration-tests-ldap job (SAMBA_DOMAIN_PASSWORD,
+    # SAMBA_TEST_OLD_PASSWORD, SAMBA_TEST_NEW_PASSWORD). Without this,
+    # `secrets.X` evaluates to empty strings inside tests.yml.
+    secrets: inherit

@@ -11,6 +11,9 @@ permissions:
 jobs:
   tests:
     uses: ./.github/workflows/tests.yml
+    # Reusable workflows don't inherit secrets by default; Phase 11's
+    # integration-tests-ldap job needs SAMBA_* secrets to run.
+    secrets: inherit
 
   release:
     needs: tests

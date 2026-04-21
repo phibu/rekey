@@ -10,6 +10,33 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.0.0-alpha.1] — TBD (release day)
+
+First v2.0 alpha. Introduces a cross-platform `LdapPasswordChangeProvider` backed by `System.DirectoryServices.Protocols`. **Existing Windows deployments upgrade with no config changes** — `PasswordChangeOptions.ProviderMode` defaults to `Auto`, which picks the Windows provider on Windows.
+
+### Added
+- **Cross-platform LDAP provider** — new `PassReset.PasswordProvider.Ldap` project (`net10.0`) implementing `IPasswordChangeProvider` via `LdapConnection`. Works on Windows, Linux, and macOS. Passes a shared behavioral contract test suite against the existing Windows provider. *(provider)*
+- **`PasswordChangeOptions.ProviderMode`** — new `Auto | Windows | Ldap` enum selecting the active provider. Default `Auto`. Schema + templates updated. *(web, provider)*
+- **Service-account LDAP binding fields** — `ServiceAccountDn`, `ServiceAccountPassword`, `BaseDn`, `LdapHostnames`, `LdapPort`, `LdapUseSsl`, `LdapTrustedCertificateThumbprints`. `ServiceAccountPassword` binds via the `PasswordChangeOptions__ServiceAccountPassword` env var. *(web, provider)*
+- **New operator doc** — [`docs/AD-ServiceAccount-LDAP-Setup.md`](docs/AD-ServiceAccount-LDAP-Setup.md) covers service-account creation, "Change Password" extended right grant, LDAPS cert trust on Linux, and a troubleshooting matrix. *(docs)*
+- **Samba DC CI integration test** (warning-only in this release) — GitHub Actions `integration-tests-ldap` job spins up a Samba AD DC service container and runs an end-to-end change-password flow against the Ldap provider. *(ci)*
+
+### Changed
+- **`PassReset.Web` retargeted to `net10.0`** — the Windows provider is now a conditional `ProjectReference` gated on `$(OS) == 'Windows_NT'` with a `WINDOWS_PROVIDER` compile constant. Linux / Docker builds skip the Windows provider entirely. *(web)*
+- **`PassReset.Tests` retargeted to `net10.0`** — cross-platform tests (web, controllers, contract tests, Ldap unit tests) now run on Linux CI. Windows-only tests moved to a new `PassReset.Tests.Windows` project (`net10.0-windows`). *(test)*
+
+### Non-changes (explicit)
+- **Windows provider unchanged.** `PassReset.PasswordProvider` (net10.0-windows) is byte-for-byte identical to v1.4.2. Zero regression for Windows operators.
+- **`UserCannotChangePassword` ACE check** is deferred on the LDAP provider. AD's server-side modify rejection provides enforcement without the ACE check; the error message is less specific on Linux but behavior is correct.
+
+### Known Limitations
+- **Linux deployment not yet supported in this alpha.** Despite the LDAP provider being cross-platform, the ASP.NET Core host (`PassReset.Web`) still depends on `System.DirectoryServices.AccountManagement` via `HealthController.cs` and will not compile on a `net10.0` (non-Windows) target. `PassReset.Web` currently uses a conditional TFM (`net10.0-windows` on Windows, `net10.0` elsewhere) but the Linux build path is deferred to a follow-up phase. **Current alpha audience: Windows operators who want to test the LDAP provider pathway before the beta.**
+
+### Breaking
+- None for Windows upgraders running with default config. (Schema adds `ProviderMode` with default `Auto`; Windows stays on Windows provider.)
+
+---
+
 ## [1.4.2] — 2026-04-20
 
 Installer hotfix rolling up four PS 7 compatibility issues that blocked `Install-PassReset.ps1` on clean Windows Server hosts. No behavior change in the running application.

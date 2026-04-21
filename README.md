@@ -48,14 +48,24 @@ AD-Passreset-Portal is a .NET 10‑based Active Directory password‑change port
 
 | Layer | Technology |
 |---|---|
-| Runtime | .NET 10 LTS, Windows |
+| Runtime | .NET 10 LTS (cross-platform as of v2.0) |
 | Web framework | ASP.NET Core |
-| AD integration | `System.DirectoryServices.AccountManagement` — domain-joined or explicit LDAP |
+| AD integration | Windows: `System.DirectoryServices.AccountManagement`. Linux/macOS: `System.DirectoryServices.Protocols` (LDAPS). |
 | Email | MailKit (STARTTLS / SMTPS / SMTP relay) |
 | Frontend | React 19 + TypeScript |
 | UI components | Material UI v6 |
 | Build tool | Vite |
-| Deployment | IIS 10 on Windows Server (2019, 2022, 2025) |
+| Deployment | IIS 10 on Windows Server (2019, 2022, 2025), or any Linux / Docker host (v2.0+) |
+
+### Platform support
+
+| Platform | Status | Provider | Setup guide |
+|---|---|---|---|
+| Windows Server 2019 / 2022 / 2025 (IIS) | Supported | Windows (default) | [`docs/IIS-Setup.md`](docs/IIS-Setup.md) + [`docs/AD-ServiceAccount-Setup.md`](docs/AD-ServiceAccount-Setup.md) |
+| Linux (any `net10.0` host) | Supported (v2.0+) | LDAP | [`docs/AD-ServiceAccount-LDAP-Setup.md`](docs/AD-ServiceAccount-LDAP-Setup.md) |
+| macOS / Docker | Supported (v2.0+) | LDAP | [`docs/AD-ServiceAccount-LDAP-Setup.md`](docs/AD-ServiceAccount-LDAP-Setup.md) |
+
+Existing Windows deployments upgrade to v2.0 with no config changes — `PasswordChangeOptions.ProviderMode` defaults to `Auto`, which selects the Windows provider on Windows.
 
 ---
 
@@ -123,11 +133,12 @@ deploy/
   Install-PassReset.ps1       — installs or upgrades on IIS
   Uninstall-PassReset.ps1     — removes the installation from IIS
 docs/
-  IIS-Setup.md                — step-by-step IIS and certificate guide
-  AD-ServiceAccount-Setup.md  — Active Directory permissions guide
-  appsettings-Production.md   — full configuration reference
-  Secret-Management.md        — credential handling and hardening options
-  Known-Limitations.md        — documented constraints and trade-offs
+  IIS-Setup.md                     — step-by-step IIS and certificate guide (Windows)
+  AD-ServiceAccount-Setup.md       — Active Directory permissions guide (Windows)
+  AD-ServiceAccount-LDAP-Setup.md  — service account + LDAPS trust for Linux / LDAP mode
+  appsettings-Production.md        — full configuration reference
+  Secret-Management.md             — credential handling and hardening options
+  Known-Limitations.md             — documented constraints and trade-offs
 ```
 
 ---

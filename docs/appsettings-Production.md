@@ -215,6 +215,25 @@ If you change `path`, ensure the app pool identity has `Modify` rights on the pa
 | `NotificationEmailDomain` | string | `""` | Domain suffix used with `SamAccountNameAtDomain` strategy. Falls back to `DefaultDomain` when empty. |
 | `NotificationEmailTemplate` | string | `""` | Template string used with `Custom` strategy. Placeholders: `{samaccountname}`, `{userprincipalname}`, `{mail}`, `{defaultdomain}`. Example: `{samaccountname}@{defaultdomain}` |
 
+### Cross-platform LDAP provider (v2.0+)
+
+When PassReset runs on Linux (or with `ProviderMode: "Ldap"` on Windows), it selects the cross-platform `LdapPasswordChangeProvider` backed by `System.DirectoryServices.Protocols`. Operator setup — service account creation, the "Change Password" extended-right grant, and LDAPS CA trust on Linux — is documented in [`AD-ServiceAccount-LDAP-Setup.md`](AD-ServiceAccount-LDAP-Setup.md).
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `ProviderMode` | string | `"Auto"` | Provider selection. `Auto` = Windows provider on Windows, Ldap provider elsewhere. `Windows` = force the Windows provider (fails to start on non-Windows). `Ldap` = force the cross-platform provider on every host. |
+| `ServiceAccountDn` | string | `""` | Distinguished Name of the LDAP bind account, e.g. `CN=svc-passreset,OU=ServiceAccounts,DC=corp,DC=example,DC=com`. Required when `ProviderMode` resolves to `Ldap`. |
+| `ServiceAccountPassword` | string | `""` | Password for `ServiceAccountDn`. **Never store in config** — bind via the `PasswordChangeOptions__ServiceAccountPassword` environment variable (see [Secrets and env-var overrides](#secrets-and-env-var-overrides-stab-017)). |
+| `BaseDn` | string | `""` | Search base used to locate users by the configured username attributes, e.g. `DC=corp,DC=example,DC=com`. |
+| `LdapHostnames` | string[] | `[]` | Directory controller hostnames (also used by the Windows provider when `UseAutomaticContext: false`). The Ldap provider connects to the first reachable entry. |
+| `LdapPort` | int | `636` | LDAPS port. Use `636` with `LdapUseSsl: true`. Non-TLS `389` is rejected by the Ldap provider. |
+| `LdapUseSsl` | bool | `true` | Must be `true` for the Ldap provider — the change-password operation ships the new credential and refuses to run over plaintext. |
+| `LdapTrustedCertificateThumbprints` | string[] | `[]` | SHA-1 or SHA-256 thumbprints of directory controller certificates to trust when the OS chain validation fails (typical for Linux hosts that haven't imported the domain CA). Spaces and colons are tolerated; comparison is case-insensitive. |
+
+> Set `ProviderMode: "Ldap"` on Windows only for parity testing. In production on Windows, leave it at `Auto` — the Windows provider remains byte-for-byte identical to v1.4.2.
+
+> Changing `ProviderMode` requires an app restart — provider selection is captured once at startup and not re-evaluated on `IOptionsMonitor` reloads.
+
 ### NotificationEmailStrategy values
 
 | Value | Address resolved as | Example |

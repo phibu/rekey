@@ -86,7 +86,7 @@ internal sealed class PasswordExpiryNotificationService : BackgroundService, IEx
             var provider       = scope.ServiceProvider.GetRequiredService<IPasswordChangeProvider>();
             var emailService   = scope.ServiceProvider.GetRequiredService<IEmailService>();
             var passwordOptions = scope.ServiceProvider
-                .GetRequiredService<IOptions<PassReset.PasswordProvider.PasswordChangeOptions>>().Value;
+                .GetRequiredService<IOptions<PasswordChangeOptions>>().Value;
 
             var maxAge    = provider.GetDomainMaxPasswordAge();
             var threshold = TimeSpan.FromDays(_notifSettings.DaysBeforeExpiry);

@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- Cross-platform test project (Phase 11). Windows-only tests were extracted to
+         PassReset.Tests.Windows in Task 15. This project targets plain net10.0 so the
+         Linux CI job can build and run it. -->
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <IsPackable>false</IsPackable>
@@ -31,13 +34,11 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="NSubstitute" Version="5.3.0" />
-    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.*" />
     <PackageReference Include="Serilog" Version="4.3.0" />
     <PackageReference Include="Serilog.Extensions.Logging" Version="10.0.0" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PassReset.Common\PassReset.Common.csproj" />
-    <ProjectReference Include="..\PassReset.PasswordProvider\PassReset.PasswordProvider.csproj" />
-    <ProjectReference Include="..\PassReset.Web\PassReset.Web.csproj" />
+    <ProjectReference Include="..\PassReset.PasswordProvider.Ldap\PassReset.PasswordProvider.Ldap.csproj" />
   </ItemGroup>
 </Project>
