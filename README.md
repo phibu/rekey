@@ -210,6 +210,7 @@ PassReset is designed for handling Active Directory credentials securely:
 - Privileged AD groups blocked by default
 - Passwords never logged, stored, or returned in API responses
 - SIEM integration for all security events
+- Loopback-only admin UI with encrypted secret storage (Phase 13) — see [docs/Admin-UI.md](docs/Admin-UI.md)
 
 For vulnerability reporting, see [`SECURITY.md`](SECURITY.md).
 Known constraints and trade-offs: [`docs/Known-Limitations.md`](docs/Known-Limitations.md).

@@ -28,9 +28,10 @@ PassReset relies on ASP.NET Core's default configuration precedence. The three s
 **Source precedence** (later wins):
 1. `appsettings.json`
 2. `appsettings.{Environment}.json`
-3. `dotnet user-secrets` (Development only, when `UserSecretsId` is set in the csproj)
-4. `AddEnvironmentVariables()` with `__` path delimiter
-5. Command-line args
+3. `secrets.dat` (Phase 13 admin UI, encrypted via ASP.NET Core Data Protection)
+4. `dotnet user-secrets` (Development only, when `UserSecretsId` is set in the csproj)
+5. `AddEnvironmentVariables()` with `__` path delimiter
+6. Command-line args
 
 **Config key → env var mapping:**
 
@@ -131,6 +132,20 @@ $encrypted = [System.Security.Cryptography.ProtectedData]::Protect(
 ```
 
 Note: This approach requires a custom configuration provider in the application to decrypt at startup. It is not built-in and is only recommended for organizations with specific compliance requirements that prohibit both plaintext config and environment variables.
+
+### Option 4: Admin UI with encrypted storage (Phase 13)
+
+The Phase 13 admin UI stores secrets in `secrets.dat`, encrypted via ASP.NET Core Data Protection. On Windows, the DP key ring is itself protected by DPAPI — a Phase 13 realization of what Option 3 sketched.
+
+To use it:
+1. RDP to the server.
+2. Browse `http://localhost:5010/admin`.
+3. Enter secrets on the relevant pages.
+4. Recycle the app pool.
+
+Environment variables (Option 1) continue to override anything the admin UI writes — this is the intended STAB-017 precedence.
+
+See `docs/Admin-UI.md` for the full operator guide.
 
 ## Credential Rotation
 

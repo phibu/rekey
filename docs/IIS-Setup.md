@@ -441,4 +441,10 @@ Env-var values are scoped to the PassReset AppPool and never appear on disk outs
 
 ---
 
+## Admin UI (Phase 13)
+
+The admin UI is bound to `127.0.0.1` on port 5010 (configurable via `AdminSettings.LoopbackPort`). It is not reachable over the public HTTPS binding. To use it, RDP to the server and browse `http://localhost:5010/admin`. See `docs/Admin-UI.md`.
+
+---
+
 *For AD service account setup and required permissions, see [`AD-ServiceAccount-Setup.md`](AD-ServiceAccount-Setup.md).*

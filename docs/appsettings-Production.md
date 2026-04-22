@@ -628,6 +628,21 @@ The template now validates against [`appsettings.schema.json`](../src/PassReset.
 
 ---
 
+### `AdminSettings`
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `Enabled` | bool | `false` | Master feature flag (opt-in); when false, no admin listener or routes. |
+| `LoopbackPort` | integer | `5010` | TCP port for the 127.0.0.1 admin listener. Range 1024-65535. |
+| `KeyStorePath` | string or null | `null` | Absolute path to the Data Protection key ring. Null → `<install-dir>\keys`. |
+| `DataProtectionCertThumbprint` | string or null | `null` | SHA-1 thumbprint of the cert protecting the DP key ring on Linux. Required on non-Windows. |
+| `AppSettingsFilePath` | string or null | `null` | Absolute path the admin UI writes to. Null → the standard `appsettings.Production.json`. |
+| `SecretsFilePath` | string or null | `null` | Absolute path to the encrypted `secrets.dat`. Null → `<install-dir>\secrets.dat`. |
+
+See `docs/Admin-UI.md` for the operator workflow.
+
+---
+
 ### Secrets and env-var overrides (STAB-017)
 
 The three production secrets below can be sourced from process environment variables (or `dotnet user-secrets` in Development) instead of being stored in `appsettings.Production.json`. ASP.NET Core's default host builder wires `AddEnvironmentVariables()` using the `__` (double underscore) path delimiter (D-16 — no custom `PASSRESET_` prefix).
