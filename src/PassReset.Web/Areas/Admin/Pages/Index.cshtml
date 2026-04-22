@@ -1,0 +1,19 @@
+@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Dashboard";
+}
+<h1 class="mb-4">Configuration overview</h1>
+<p class="text-muted">Use the navigation above to edit each section. After saving, visit <a asp-page="/Recycle">Recycle</a> to apply changes.</p>
+
+<table class="table">
+    <thead><tr><th>Section</th><th>Status</th></tr></thead>
+    <tbody>
+        <tr><td>LDAP</td><td>@Model.LdapSummary</td></tr>
+        <tr><td>SMTP</td><td>@Model.SmtpSummary</td></tr>
+        <tr><td>reCAPTCHA</td><td>@Model.RecaptchaSummary</td></tr>
+        <tr><td>Groups</td><td>@Model.GroupsSummary</td></tr>
+        <tr><td>Local Policy</td><td>@Model.LocalPolicySummary</td></tr>
+        <tr><td>SIEM</td><td>@Model.SiemSummary</td></tr>
+    </tbody>
+</table>
