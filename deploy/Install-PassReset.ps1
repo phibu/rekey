@@ -1,5 +1,4 @@
-﻿#Requires -RunAsAdministrator
-#Requires -Version 7.0
+﻿#Requires -Version 7.0
 <#
 .SYNOPSIS
     Installs PassReset on IIS (Windows Server 2019 / 2022 / 2025, IIS 10).
@@ -98,7 +97,10 @@ param(
 
     # STAB-019: bypass post-deploy /api/health + /api/password verification (air-gapped hosts only).
     # Default $false — verification runs by default, including under -Force (D-06/D-07).
-    [switch] $SkipHealthCheck = $false
+    [switch] $SkipHealthCheck = $false,
+
+    [ValidateSet('IIS','Service','Console')]
+    [string] $HostingMode
 )
 
 Set-StrictMode -Version Latest
@@ -400,7 +402,49 @@ function Test-AppSettingsSchemaDrift {
     }
 }
 
+function Test-HostingModeValue {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)] [string] $HostingMode)
+    # Uses PowerShell's ValidateSet attribute indirectly via a stub with the same set.
+    $valid = @('IIS','Service','Console')
+    if ($valid -notcontains $HostingMode) {
+        throw "HostingMode '$HostingMode' is not valid. Expected one of: $($valid -join ', ')."
+    }
+    return $true
+}
+
+function Get-HostingModeInteractive {
+    [CmdletBinding()]
+    param(
+        [Parameter()] [string] $Default  # 'IIS' on upgrade of IIS-hosted install; $null on fresh
+    )
+    $prompt = if ($Default) {
+        "Hosting mode? [I]IS / [S]ervice / [C]onsole (default: $Default)"
+    } else {
+        "Hosting mode? [I]IS / [S]ervice / [C]onsole"
+    }
+    while ($true) {
+        $choice = Read-Host $prompt
+        if (-not $choice -and $Default) { return $Default }
+        switch -Regex ($choice) {
+            '^[Ii]' { return 'IIS' }
+            '^[Ss]' { return 'Service' }
+            '^[Cc]' { return 'Console' }
+            default { Write-Host "Please answer I, S, or C." -ForegroundColor Yellow }
+        }
+    }
+}
+
+# Pester test mode: dot-source the script to import functions without executing the install flow.
+if ($env:PASSRESET_TEST_MODE -eq '1') {
+    return
+}
+
 # ─── 1. Prerequisites ─────────────────────────────────────────────────────────
+
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    throw "This installer must be run as Administrator."
+}
 
 Write-Step 'Checking prerequisites'
 
