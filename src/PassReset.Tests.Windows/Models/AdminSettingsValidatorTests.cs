@@ -4,6 +4,9 @@ using PassReset.Web.Models;
 
 namespace PassReset.Tests.Windows.Models;
 
+// NOTE: the test project targets net10.0-windows, so the non-Windows branch
+// in AdminSettingsValidator (DataProtectionCertThumbprint required on Linux)
+// cannot be exercised here. OperatingSystem.IsWindows() is always true.
 public sealed class AdminSettingsValidatorTests
 {
     private static AdminSettings Baseline() => new() { Enabled = true, LoopbackPort = 5010 };
@@ -22,6 +25,14 @@ public sealed class AdminSettingsValidatorTests
     public void Disabled_SkipsAllChecks_EvenIfOtherFieldsInvalid()
     {
         var r = Run(new AdminSettings { Enabled = false, LoopbackPort = 0 });
+        Assert.True(r.Succeeded, string.Join("; ", r.Failures ?? []));
+    }
+
+    [Fact]
+    public void Default_IsDisabled_AndPasses()
+    {
+        // Ensures opt-in default: a bare AdminSettings (feature flag unset) must validate.
+        var r = Run(new AdminSettings());
         Assert.True(r.Succeeded, string.Join("; ", r.Failures ?? []));
     }
 

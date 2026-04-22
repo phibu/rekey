@@ -6,8 +6,8 @@ namespace PassReset.Web.Configuration;
 /// </summary>
 public sealed class AdminSettings
 {
-    /// <summary>Master feature flag. When false, no admin listener is started and no admin pages are mapped.</summary>
-    public bool Enabled { get; set; } = true;
+    /// <summary>Master feature flag. Defaults to <c>false</c> (opt-in): the admin listener is only started and pages mapped when explicitly enabled in configuration.</summary>
+    public bool Enabled { get; set; } = false;
 
     /// <summary>TCP port for the 127.0.0.1-bound Kestrel listener. Range 1024-65535.</summary>
     public int LoopbackPort { get; set; } = 5010;

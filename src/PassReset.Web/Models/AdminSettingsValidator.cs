@@ -4,6 +4,9 @@ using PassReset.Web.Configuration;
 namespace PassReset.Web.Models;
 
 /// <summary>Validates <see cref="AdminSettings"/> at startup. Fail-fast.</summary>
+// Internal: scoped to the Web assembly; DI registration stays in Program.cs and
+// no cross-project consumers are planned. SmtpSettingsValidator is public for
+// historical reasons — new validators default to internal unless needed elsewhere.
 internal sealed class AdminSettingsValidator : IValidateOptions<AdminSettings>
 {
     public ValidateOptionsResult Validate(string? name, AdminSettings options)
