@@ -42,6 +42,7 @@
   <ItemGroup>
     <!-- Ensure config template + schema ship in publish output (Phase 8, D-02/D-11).
          Web SDK auto-includes these as Content; Update (not Include) overrides copy metadata. -->
+    <PackageReference Include="Serilog" Version="4.3.1" />
     <Content Update="appsettings.Production.template.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
