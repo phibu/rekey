@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.DataProtection;
 using PassReset.Web.Services.Configuration;
 
-namespace PassReset.Tests.Configuration;
+namespace PassReset.Tests.Windows.Configuration;
 
 public sealed class ConfigProtectorTests
 {

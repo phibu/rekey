@@ -65,10 +65,10 @@
 
 | Path | Responsibility |
 |------|----------------|
-| `src/PassReset.Tests/Configuration/ConfigProtectorTests.cs` | Protect/Unprotect round-trip + purpose isolation |
-| `src/PassReset.Tests/Configuration/SecretStoreTests.cs` | Missing-file, round-trip, partial-bundle, atomic write |
-| `src/PassReset.Tests/Configuration/AppSettingsEditorTests.cs` | Round-trip + unmanaged-key preservation + atomic write |
-| `src/PassReset.Tests/Configuration/SecretConfigurationProviderTests.cs` | Decrypted values surface at canonical keys; env-var overrides |
+| `src/PassReset.Tests.Windows/Configuration/ConfigProtectorTests.cs` | Protect/Unprotect round-trip + purpose isolation |
+| `src/PassReset.Tests.Windows/Configuration/SecretStoreTests.cs` | Missing-file, round-trip, partial-bundle, atomic write |
+| `src/PassReset.Tests.Windows/Configuration/AppSettingsEditorTests.cs` | Round-trip + unmanaged-key preservation + atomic write |
+| `src/PassReset.Tests.Windows/Configuration/SecretConfigurationProviderTests.cs` | Decrypted values surface at canonical keys; env-var overrides |
 | `src/PassReset.Tests.Windows/Models/AdminSettingsValidatorTests.cs` | Port range, absolute-path, defaults |
 | `src/PassReset.Tests.Windows/Admin/AdminRazorPagesTests.cs` | WebApplicationFactory integration: GET/POST, validation errors, antiforgery |
 | `src/PassReset.Tests.Windows/Admin/LoopbackOnlyGuardTests.cs` | Non-loopback port returns 404 |
@@ -320,17 +320,17 @@ git commit -m "feat(web): add AdminSettings options + validator [phase-13]"
 ### Task 2: `IConfigProtector` — failing tests
 
 **Files:**
-- Test: `src/PassReset.Tests/Configuration/ConfigProtectorTests.cs`
+- Test: `src/PassReset.Tests.Windows/Configuration/ConfigProtectorTests.cs`
 
 - [ ] **Step 1: Write the failing test file**
 
-Create `src/PassReset.Tests/Configuration/ConfigProtectorTests.cs`:
+Create `src/PassReset.Tests.Windows/Configuration/ConfigProtectorTests.cs`:
 
 ```csharp
 using Microsoft.AspNetCore.DataProtection;
 using PassReset.Web.Services.Configuration;
 
-namespace PassReset.Tests.Configuration;
+namespace PassReset.Tests.Windows.Configuration;
 
 public sealed class ConfigProtectorTests
 {
@@ -386,13 +386,13 @@ public sealed class ConfigProtectorTests
 
 - [ ] **Step 2: Run to verify the compile error**
 
-Run: `dotnet test src/PassReset.Tests/PassReset.Tests.csproj --filter FullyQualifiedName~ConfigProtectorTests --configuration Release`
+Run: `dotnet test src/PassReset.Tests.Windows/PassReset.Tests.Windows.csproj --filter FullyQualifiedName~ConfigProtectorTests --configuration Release`
 Expected: compile error — `IConfigProtector` and `ConfigProtector` do not exist.
 
 - [ ] **Step 3: Commit**
 
 ```
-git add src/PassReset.Tests/Configuration/ConfigProtectorTests.cs
+git add src/PassReset.Tests.Windows/Configuration/ConfigProtectorTests.cs
 git commit -m "test(web): failing tests for IConfigProtector [phase-13]"
 ```
 
@@ -472,7 +472,7 @@ internal sealed class ConfigProtector : IConfigProtector
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `dotnet test src/PassReset.Tests/PassReset.Tests.csproj --filter FullyQualifiedName~ConfigProtectorTests --configuration Release`
+Run: `dotnet test src/PassReset.Tests.Windows/PassReset.Tests.Windows.csproj --filter FullyQualifiedName~ConfigProtectorTests --configuration Release`
 Expected: 5 passed, 0 failed.
 
 - [ ] **Step 5: Commit**
@@ -489,7 +489,7 @@ git commit -m "feat(web): implement IConfigProtector with Data Protection purpos
 **Files:**
 - Create: `src/PassReset.Web/Services/Configuration/SecretBundle.cs`
 - Create: `src/PassReset.Web/Services/Configuration/ISecretStore.cs`
-- Test: `src/PassReset.Tests/Configuration/SecretStoreTests.cs`
+- Test: `src/PassReset.Tests.Windows/Configuration/SecretStoreTests.cs`
 
 - [ ] **Step 1: Create `SecretBundle` + `ISecretStore`**
 
@@ -534,14 +534,14 @@ public interface ISecretStore
 
 - [ ] **Step 2: Write the failing test file**
 
-Create `src/PassReset.Tests/Configuration/SecretStoreTests.cs`:
+Create `src/PassReset.Tests.Windows/Configuration/SecretStoreTests.cs`:
 
 ```csharp
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Logging.Abstractions;
 using PassReset.Web.Services.Configuration;
 
-namespace PassReset.Tests.Configuration;
+namespace PassReset.Tests.Windows.Configuration;
 
 public sealed class SecretStoreTests : IDisposable
 {
@@ -632,13 +632,13 @@ public sealed class SecretStoreTests : IDisposable
 
 - [ ] **Step 3: Run to confirm failure**
 
-Run: `dotnet test src/PassReset.Tests/PassReset.Tests.csproj --filter FullyQualifiedName~SecretStoreTests --configuration Release`
+Run: `dotnet test src/PassReset.Tests.Windows/PassReset.Tests.Windows.csproj --filter FullyQualifiedName~SecretStoreTests --configuration Release`
 Expected: compile error — `SecretStore` does not exist (the interface + record compile; the impl class does not).
 
 - [ ] **Step 4: Commit**
 
 ```
-git add src/PassReset.Web/Services/Configuration/SecretBundle.cs src/PassReset.Web/Services/Configuration/ISecretStore.cs src/PassReset.Tests/Configuration/SecretStoreTests.cs
+git add src/PassReset.Web/Services/Configuration/SecretBundle.cs src/PassReset.Web/Services/Configuration/ISecretStore.cs src/PassReset.Tests.Windows/Configuration/SecretStoreTests.cs
 git commit -m "test(web): failing tests for ISecretStore + SecretBundle contract [phase-13]"
 ```
 
@@ -718,7 +718,7 @@ internal sealed class SecretStore : ISecretStore
 
 - [ ] **Step 2: Run tests to verify they pass**
 
-Run: `dotnet test src/PassReset.Tests/PassReset.Tests.csproj --filter FullyQualifiedName~SecretStoreTests --configuration Release`
+Run: `dotnet test src/PassReset.Tests.Windows/PassReset.Tests.Windows.csproj --filter FullyQualifiedName~SecretStoreTests --configuration Release`
 Expected: 7 passed, 0 failed.
 
 - [ ] **Step 3: Commit**
@@ -733,11 +733,11 @@ git commit -m "feat(web): implement SecretStore with atomic write [phase-13]"
 ### Task 6: `SecretConfigurationProvider` — failing tests
 
 **Files:**
-- Create: `src/PassReset.Tests/Configuration/SecretConfigurationProviderTests.cs`
+- Create: `src/PassReset.Tests.Windows/Configuration/SecretConfigurationProviderTests.cs`
 
 - [ ] **Step 1: Write the failing test file**
 
-Create `src/PassReset.Tests/Configuration/SecretConfigurationProviderTests.cs`:
+Create `src/PassReset.Tests.Windows/Configuration/SecretConfigurationProviderTests.cs`:
 
 ```csharp
 using Microsoft.AspNetCore.DataProtection;
@@ -745,7 +745,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using PassReset.Web.Services.Configuration;
 
-namespace PassReset.Tests.Configuration;
+namespace PassReset.Tests.Windows.Configuration;
 
 public sealed class SecretConfigurationProviderTests : IDisposable
 {
@@ -831,13 +831,13 @@ public sealed class SecretConfigurationProviderTests : IDisposable
 
 - [ ] **Step 2: Run to confirm failure**
 
-Run: `dotnet test src/PassReset.Tests/PassReset.Tests.csproj --filter FullyQualifiedName~SecretConfigurationProviderTests --configuration Release`
+Run: `dotnet test src/PassReset.Tests.Windows/PassReset.Tests.Windows.csproj --filter FullyQualifiedName~SecretConfigurationProviderTests --configuration Release`
 Expected: compile error — `SecretConfigurationSource` does not exist.
 
 - [ ] **Step 3: Commit**
 
 ```
-git add src/PassReset.Tests/Configuration/SecretConfigurationProviderTests.cs
+git add src/PassReset.Tests.Windows/Configuration/SecretConfigurationProviderTests.cs
 git commit -m "test(web): failing tests for SecretConfigurationProvider [phase-13]"
 ```
 
@@ -929,7 +929,7 @@ internal sealed class SecretConfigurationProvider : ConfigurationProvider
 
 - [ ] **Step 3: Run the tests**
 
-Run: `dotnet test src/PassReset.Tests/PassReset.Tests.csproj --filter FullyQualifiedName~SecretConfigurationProviderTests --configuration Release`
+Run: `dotnet test src/PassReset.Tests.Windows/PassReset.Tests.Windows.csproj --filter FullyQualifiedName~SecretConfigurationProviderTests --configuration Release`
 Expected: 4 passed, 0 failed.
 
 - [ ] **Step 4: Commit**
@@ -1043,17 +1043,17 @@ git commit -m "feat(web): add AppSettingsSnapshot records + IAppSettingsEditor c
 ### Task 9: `AppSettingsEditor` — failing tests
 
 **Files:**
-- Test: `src/PassReset.Tests/Configuration/AppSettingsEditorTests.cs`
+- Test: `src/PassReset.Tests.Windows/Configuration/AppSettingsEditorTests.cs`
 
 - [ ] **Step 1: Write the failing test file**
 
-Create `src/PassReset.Tests/Configuration/AppSettingsEditorTests.cs`:
+Create `src/PassReset.Tests.Windows/Configuration/AppSettingsEditorTests.cs`:
 
 ```csharp
 using PassReset.Common;
 using PassReset.Web.Services.Configuration;
 
-namespace PassReset.Tests.Configuration;
+namespace PassReset.Tests.Windows.Configuration;
 
 public sealed class AppSettingsEditorTests : IDisposable
 {
@@ -1205,13 +1205,13 @@ public sealed class AppSettingsEditorTests : IDisposable
 
 - [ ] **Step 2: Run to confirm failure**
 
-Run: `dotnet test src/PassReset.Tests/PassReset.Tests.csproj --filter FullyQualifiedName~AppSettingsEditorTests --configuration Release`
+Run: `dotnet test src/PassReset.Tests.Windows/PassReset.Tests.Windows.csproj --filter FullyQualifiedName~AppSettingsEditorTests --configuration Release`
 Expected: compile error — `AppSettingsEditor` does not exist.
 
 - [ ] **Step 3: Commit**
 
 ```
-git add src/PassReset.Tests/Configuration/AppSettingsEditorTests.cs
+git add src/PassReset.Tests.Windows/Configuration/AppSettingsEditorTests.cs
 git commit -m "test(web): failing tests for AppSettingsEditor [phase-13]"
 ```
 
@@ -1460,7 +1460,7 @@ internal sealed class AppSettingsEditor : IAppSettingsEditor
 
 - [ ] **Step 2: Run tests to verify they pass**
 
-Run: `dotnet test src/PassReset.Tests/PassReset.Tests.csproj --filter FullyQualifiedName~AppSettingsEditorTests --configuration Release`
+Run: `dotnet test src/PassReset.Tests.Windows/PassReset.Tests.Windows.csproj --filter FullyQualifiedName~AppSettingsEditorTests --configuration Release`
 Expected: 6 passed, 0 failed.
 
 - [ ] **Step 3: Commit**
