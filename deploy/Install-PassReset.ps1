@@ -480,6 +480,70 @@ function Resolve-HttpsCertificate {
     return $null
 }
 
+function Test-PortFree {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [int] $Port,
+        [Parameter()] [string] $OwnedByIisSite  # if a site is bound to this port and matches, treat as free (will be torn down)
+    )
+
+    $conn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+    if (-not $conn) { return $true }
+
+    # Hook point for IIS-site-owned bindings during migration.
+    if ($OwnedByIisSite) {
+        $iisBinding = Get-Website -Name $OwnedByIisSite -ErrorAction SilentlyContinue
+        if ($iisBinding -and ($iisBinding.Bindings.Collection.bindingInformation -match ":${Port}:")) {
+            Write-Verbose "Port $Port is bound by IIS site '$OwnedByIisSite' — will be freed at teardown."
+            return $true
+        }
+    }
+
+    $owningPid = $conn[0].OwningProcess
+    $proc = Get-Process -Id $owningPid -ErrorAction SilentlyContinue
+    Write-Warning "Port $Port is bound by process $owningPid ($($proc.ProcessName))."
+    return $false
+}
+
+function Test-ServiceModePreflight {
+    <#
+    .SYNOPSIS
+    Runs all Service-mode preconditions. Returns $true only if every check passes.
+    On failure, writes a clear Write-Warning for each failed check and returns $false.
+    Does NOT touch IIS or create services.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter()] [string] $CertThumbprint,
+        [Parameter()] [string] $PfxPath,
+        [Parameter()] [securestring] $PfxPassword,
+        [Parameter()] [int] $Port = 443,
+        [Parameter()] [string] $ServiceAccount = 'NT SERVICE\PassReset',
+        [Parameter()] [string] $MigrateFromIisSite  # optional: existing site name being torn down
+    )
+
+    $ok = $true
+
+    if (-not (Resolve-HttpsCertificate -Thumbprint $CertThumbprint -PfxPath $PfxPath -PfxPassword $PfxPassword)) {
+        Write-Warning "Cert preflight failed."
+        $ok = $false
+    }
+
+    if (-not (Test-PortFree -Port $Port -OwnedByIisSite $MigrateFromIisSite)) {
+        Write-Warning "Port $Port preflight failed."
+        $ok = $false
+    }
+
+    # Service account: virtual accounts are always valid; domain accounts we trust the installer's
+    # caller to pass correctly. We could do an LDAP probe here but won't in this phase.
+    if (-not $ServiceAccount) {
+        Write-Warning "ServiceAccount preflight failed (empty)."
+        $ok = $false
+    }
+
+    return $ok
+}
+
 # Pester test mode: dot-source the script to import functions without executing the install flow.
 if ($env:PASSRESET_TEST_MODE -eq '1') {
     return
