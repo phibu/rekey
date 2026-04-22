@@ -544,10 +544,61 @@ function Test-ServiceModePreflight {
     return $ok
 }
 
+function Install-AsWindowsService {
+    <#
+    .SYNOPSIS
+    Registers PassReset as a Windows Service. Assumes files are already copied to $BinaryPath
+    and preflight has passed.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] [string] $BinaryPath,    # e.g. "C:\Program Files\PassReset\PassReset.Web.exe"
+        [Parameter()] [string] $ServiceAccount = 'NT SERVICE\PassReset',
+        [Parameter()] [securestring] $ServicePassword,  # domain-account installs only
+        [Parameter()] [string] $ServiceName = 'PassReset',
+        [Parameter()] [string] $DisplayName = 'PassReset Password Reset Portal',
+        [Parameter()] [string] $Description = 'Self-service Active Directory password reset portal.'
+    )
+
+    # Stop + remove an existing service with the same name (idempotent).
+    $existing = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+    if ($existing) {
+        if ($existing.Status -eq 'Running') { Stop-Service -Name $ServiceName -Force }
+        sc.exe delete $ServiceName | Out-Null
+        Start-Sleep -Seconds 2
+    }
+
+    $newServiceArgs = @{
+        Name           = $ServiceName
+        BinaryPathName = "`"$BinaryPath`""
+        DisplayName    = $DisplayName
+        Description    = $Description
+        StartupType    = 'AutomaticDelayedStart'
+    }
+    if ($ServicePassword) {
+        $newServiceArgs.Credential = [pscredential]::new($ServiceAccount, $ServicePassword)
+    }
+    # Virtual accounts (NT SERVICE\*) are created by SCM without a password.
+
+    New-Service @newServiceArgs | Out-Null
+    Write-Host "Service '$ServiceName' registered. Startup: AutomaticDelayedStart. Identity: $ServiceAccount." -ForegroundColor Green
+
+    Start-Service -Name $ServiceName
+    Write-Host "Service '$ServiceName' started." -ForegroundColor Green
+}
+
 # Pester test mode: dot-source the script to import functions without executing the install flow.
 if ($env:PASSRESET_TEST_MODE -eq '1') {
     return
 }
+
+# ─── Resolve hosting mode (prompt on fresh install, default on upgrade) ────
+if (-not $HostingMode) {
+    $existingSite = Get-Website -Name 'PassReset' -ErrorAction SilentlyContinue
+    $default = if ($existingSite) { 'IIS' } else { $null }
+    $HostingMode = Get-HostingModeInteractive -Default $default
+}
+Write-Host "Hosting mode: $HostingMode" -ForegroundColor Cyan
 
 # ─── 1. Prerequisites ─────────────────────────────────────────────────────────
 
@@ -942,6 +993,8 @@ if (-not $ConfigSync) {
 } else {
     Write-Ok "Config sync mode (from -ConfigSync param): $ConfigSync"
 }
+
+if ($HostingMode -eq 'IIS') {
 
 # ─── 4. App pool ──────────────────────────────────────────────────────────────
 
@@ -1455,6 +1508,29 @@ if ($siteExists) {
             Write-Ok 'No schema drift detected.'
         }
     }
+}
+} # end if ($HostingMode -eq 'IIS')
+elseif ($HostingMode -eq 'Service') {
+    if (-not (Test-ServiceModePreflight -CertThumbprint $CertThumbprint -PfxPath $PfxPath -PfxPassword $PfxPassword -ServiceAccount $ServiceAccount -MigrateFromIisSite 'PassReset')) {
+        throw "Service-mode preflight failed. See warnings above. No changes made."
+    }
+    $existingSite = Get-Website -Name 'PassReset' -ErrorAction SilentlyContinue
+    if ($existingSite) {
+        Write-Host "Migrating from IIS: tearing down existing site..." -ForegroundColor Yellow
+        Stop-Website -Name 'PassReset' -ErrorAction SilentlyContinue
+        Remove-Website -Name 'PassReset' -ErrorAction SilentlyContinue
+        if (Get-IISAppPool -Name $AppPoolName -ErrorAction SilentlyContinue) {
+            Remove-WebAppPool -Name $AppPoolName
+        }
+    }
+    Install-AsWindowsService `
+        -BinaryPath (Join-Path $PhysicalPath 'PassReset.Web.exe') `
+        -ServiceAccount $ServiceAccount `
+        -ServicePassword $ServicePassword
+}
+elseif ($HostingMode -eq 'Console') {
+    Write-Host "Console mode: files copied to $PhysicalPath." -ForegroundColor Cyan
+    Write-Host "To start manually: dotnet '$PhysicalPath\PassReset.Web.dll'" -ForegroundColor Cyan
 }
 
 # ─── Done ─────────────────────────────────────────────────────────────────────
