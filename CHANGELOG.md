@@ -12,6 +12,16 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.0.0-alpha.6] — 2026-04-22
+
+Fifth installer hardening pass. No application code changes.
+
+### Fixed
+
+- **`Get-IISConfigCollection` pipeline enumeration on PS 7.** Alpha.5 used a three-stage pipeline (`Get-IISConfigSection | Get-IISConfigCollection | Get-IISConfigCollectionElement`) which [Microsoft docs warn against](https://learn.microsoft.com/en-us/powershell/module/iisadministration/get-iisconfigcollection) but is often tolerated on PS 5.1. On PS 7 via WinPSCompat, the `ConfigurationCollection` loses its pipeline-enumeration-suppression attribute across the session proxy boundary, so PowerShell iterates each element and passes individual `ConfigurationElement` objects to `Get-IISConfigCollectionElement` — which expects a `ConfigurationCollection` and fails binding with `"The input object cannot be bound to any parameters for the command"`. Switched to the docs-recommended two-step pattern: assign the collection to a local, then pass explicitly via `-ConfigCollection`. Fixed at three call sites (identity read, app pool write, site upgrade write). *(installer)*
+
+---
+
 ## [2.0.0-alpha.5] — 2026-04-22
 
 Fourth installer hardening pass — fixes three real errors reported on a PS 7.6 fresh IIS install of alpha.4. No application code changes.
