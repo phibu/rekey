@@ -12,6 +12,20 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.0.0-alpha.8] — 2026-04-24
+
+Installer now auto-generates a self-signed certificate when none is supplied. No application code changes.
+
+### Added
+
+- **`-AllowSelfSignedCertificate` installer switch** (default `$true`). When `Install-PassReset.ps1` runs without `-CertThumbprint` or `-PfxPath`, it now creates a self-signed cert in `Cert:\LocalMachine\My` (Subject `CN=<COMPUTERNAME>`, SANs include hostname + FQDN + `localhost`, RSA 2048, SHA-256, 2-year validity, Server Authentication EKU) and uses its thumbprint for the HTTPS binding. Idempotent: re-runs reuse the existing cert by `FriendlyName = 'PassReset Self-Signed (auto-generated)'` unless it has expired. Emits a prominent `Write-Warn` banner explaining that browsers will flag the site as untrusted, with a one-liner to import it into `Cert:\LocalMachine\Root` on dev boxes. Pass `-AllowSelfSignedCertificate:$false` to disable (installer then fails fast in Service mode, skips HTTPS binding in IIS mode). Covers both `-HostingMode IIS` and `-HostingMode Service`. For production, continue to supply a real cert via `-CertThumbprint` or `-PfxPath`. *(installer)*
+
+### Known limitations
+
+- Self-signed cert is NOT auto-removed by `Uninstall-PassReset.ps1` yet. Follow-up commit will wire this up. Meanwhile, remove manually via `Get-ChildItem Cert:\LocalMachine\My | Where-Object FriendlyName -eq 'PassReset Self-Signed (auto-generated)' | Remove-Item`.
+
+---
+
 ## [2.0.0-alpha.7] — 2026-04-22
 
 Completes the PowerShell 7 compatibility migration that began in alpha.4. All remaining `WebAdministration` call sites that depend on typed-object graphs crossing the WinPSCompat proxy have been ported to `IISAdministration` equivalents. No application code changes.
