@@ -126,6 +126,7 @@ function Write-Warn  { param([string]$Msg) Write-Host "  [!!] $Msg" -ForegroundC
 $script:StoppedForeignSites = @()
 
 function Restore-StoppedForeignSites {
+    if (-not $script:IISAvailable) { return }
     if (-not $script:StoppedForeignSites -or $script:StoppedForeignSites.Count -eq 0) { return }
     foreach ($s in $script:StoppedForeignSites) {
         try {
@@ -540,8 +541,10 @@ function Test-PortFree {
     # Hook point for IIS-site-owned bindings during migration.
     # Without WebAdministration loaded we can't tell if an IIS site owns this port. Fall through to process-owner detection — safer than assuming the port is free.
     if ($OwnedByIisSite -and $script:IISAvailable) {
-        $iisBinding = Get-Website -Name $OwnedByIisSite -ErrorAction SilentlyContinue
-        if ($iisBinding -and ($iisBinding.Bindings.Collection.bindingInformation -match ":${Port}:")) {
+        # IISAdministration: Get-IISSiteBinding returns native objects with real
+        # .BindingInformation property (not an ETS chain that dies in WinPSCompat).
+        $bindings = @(Get-IISSiteBinding -Name $OwnedByIisSite -ErrorAction SilentlyContinue)
+        if ($bindings | Where-Object { $_.BindingInformation -match ":${Port}:" }) {
             Write-Verbose "Port $Port is bound by IIS site '$OwnedByIisSite' — will be freed at teardown."
             return $true
         }
@@ -1155,12 +1158,28 @@ Write-Step "Configuring site: $SiteName"
 $selectedHttpPort = if ($HttpPort -gt 0) { $HttpPort } else { 80 }
 if (-not $siteExists -and $selectedHttpPort -eq 80) {
     Write-Step 'Checking port 80 availability'
-    $port80Sites = @(Get-WebBinding -Port 80 -Protocol http -ErrorAction SilentlyContinue |
-                       Where-Object { $_.ItemXPath -notmatch "name='$SiteName'" })
-    if ($port80Sites.Count -gt 0) {
-        $conflictSites = $port80Sites | ForEach-Object {
-            if ($_.ItemXPath -match "name='([^']+)'") { $matches[1] } else { '<unknown>' }
-        } | Sort-Object -Unique
+    # IISAdministration: walk the config collection instead of Get-WebBinding (ETS
+    # ItemXPath property does not survive the WinPSCompat deserialization boundary).
+    $sitesSection = Get-IISConfigSection -SectionPath 'system.applicationHost/sites'
+    $conflictSites = @()
+    foreach ($elem in (Get-IISConfigCollection -ConfigElement $sitesSection).GetCollection()) {
+        $name = Get-IISConfigAttributeValue -ConfigElement $elem -AttributeName 'name'
+        if ($name -eq $SiteName) { continue }
+
+        $bindingsElement = Get-IISConfigElement -ConfigElement $elem -ChildElementName 'bindings'
+        $bindingsColl    = Get-IISConfigCollection -ConfigElement $bindingsElement
+
+        foreach ($b in $bindingsColl.GetCollection()) {
+            $protocol = Get-IISConfigAttributeValue -ConfigElement $b -AttributeName 'protocol'
+            $bindInfo = Get-IISConfigAttributeValue -ConfigElement $b -AttributeName 'bindingInformation'
+            if ($protocol -eq 'http' -and $bindInfo -match ':80:') {
+                $conflictSites += $name
+                break
+            }
+        }
+    }
+    $conflictSites = @($conflictSites | Sort-Object -Unique)
+    if ($conflictSites.Count -gt 0) {
         Write-Warn "Port 80 is already bound by: $($conflictSites -join ', ')"
 
         if (-not $Force) {
@@ -1264,13 +1283,22 @@ if ($CertThumbprint) {
     if (-not $cert) {
         Write-Warn "Certificate with thumbprint $CertThumbprint not found in LocalMachine\My — skipping HTTPS binding."
     } else {
-        # Remove existing HTTPS binding on this port if any (pipe the object to avoid binding-string mismatch)
-        $existingBinding = Get-WebBinding -Name $SiteName -Protocol https -Port $HttpsPort -ErrorAction SilentlyContinue
-        if ($existingBinding) { $existingBinding | Remove-WebBinding }
+        # IISAdministration: remove existing HTTPS binding on this port (WinPSCompat
+        # strips .AddSslCertificate() instance method from Get-WebBinding proxies).
+        $existingBindings = @(Get-IISSiteBinding -Name $SiteName -Protocol https -ErrorAction SilentlyContinue)
+        foreach ($b in $existingBindings) {
+            if ($b.BindingInformation -match ":${HttpsPort}:") {
+                Remove-IISSiteBinding -Name $SiteName -BindingInformation $b.BindingInformation -Protocol https -Confirm:$false
+            }
+        }
 
-        New-WebBinding -Name $SiteName -Protocol https -Port $HttpsPort -SslFlags 0
-        $binding = Get-WebBinding -Name $SiteName -Protocol https -Port $HttpsPort
-        $binding.AddSslCertificate($CertThumbprint, 'My')
+        # New-IISSiteBinding binds the cert atomically — no method call needed.
+        New-IISSiteBinding -Name $SiteName `
+            -BindingInformation "*:${HttpsPort}:" `
+            -Protocol https `
+            -CertificateThumbPrint $CertThumbprint `
+            -CertStoreLocation 'My' `
+            | Out-Null
         Write-Ok "HTTPS binding configured on port $HttpsPort"
     }
 } else {
@@ -1279,17 +1307,20 @@ if ($CertThumbprint) {
 
 # HTTP binding — keep for HTTP→HTTPS redirect unless operator explicitly passes -HttpPort 0
 if ($CertThumbprint -and $HttpPort -le 0) {
-    $httpBinding = Get-WebBinding -Name $SiteName -Protocol http -ErrorAction SilentlyContinue
-    if ($httpBinding) {
-        $httpBinding | Remove-WebBinding
+    $httpBindings = @(Get-IISSiteBinding -Name $SiteName -Protocol http -ErrorAction SilentlyContinue)
+    foreach ($b in $httpBindings) {
+        Remove-IISSiteBinding -Name $SiteName -BindingInformation $b.BindingInformation -Protocol http -Confirm:$false
+    }
+    if ($httpBindings.Count -gt 0) {
         Write-Ok 'Removed HTTP binding (HTTPS-only mode: -HttpPort 0)'
     }
 } elseif ($CertThumbprint) {
     # Ensure the HTTP binding exists on the configured port so ASP.NET Core
     # UseHttpsRedirection() can receive and redirect plain-HTTP requests.
-    $httpBinding = Get-WebBinding -Name $SiteName -Protocol http -Port $HttpPort -ErrorAction SilentlyContinue
-    if (-not $httpBinding) {
-        New-WebBinding -Name $SiteName -Protocol http -Port $HttpPort
+    $existingHttp = @(Get-IISSiteBinding -Name $SiteName -Protocol http -ErrorAction SilentlyContinue) |
+        Where-Object { $_.BindingInformation -match ":${HttpPort}:" }
+    if (-not $existingHttp) {
+        New-IISSiteBinding -Name $SiteName -BindingInformation "*:${HttpPort}:" -Protocol http | Out-Null
         Write-Ok "HTTP :$HttpPort binding retained for HTTP→HTTPS redirect"
     } else {
         Write-Ok "HTTP :$HttpPort binding present (HTTP→HTTPS redirect active)"
@@ -1303,11 +1334,13 @@ if (-not $siteExists) {
 } else {
     # WR-02: read the actual HTTP binding(s) from IIS — previous installs on
     # alternate ports (e.g. 8081) must not be mis-announced as :$HttpPort.
-    $httpBindings = @(Get-WebBinding -Name $SiteName -Protocol http -ErrorAction SilentlyContinue)
+    # IISAdministration: .BindingInformation (PascalCase) is a real .NET property
+    # that survives the WinPSCompat boundary, unlike Get-WebBinding's ETS proxy.
+    $httpBindings = @(Get-IISSiteBinding -Name $SiteName -Protocol http -ErrorAction SilentlyContinue)
     if ($httpBindings.Count -gt 0) {
         foreach ($b in $httpBindings) {
-            # bindingInformation is "*:port:host"
-            $port = ($b.bindingInformation -split ':')[1]
+            # BindingInformation is "*:port:host"
+            $port = ($b.BindingInformation -split ':')[1]
             Write-Ok "PassReset reachable at http://${hostHeader}:${port}/ (HTTP binding retained from previous install)"
         }
     } else {
@@ -1492,31 +1525,41 @@ if (Test-Path $prodConfig) {
 function Set-PoolEnvVar {
     param([string] $PoolName, [string] $VarName, [SecureString] $SecureValue)
 
-    # Check if the variable already exists on the pool
-    $existing = Get-WebConfigurationProperty `
-        -PSPath 'MACHINE/WEBROOT/APPHOST' `
-        -Filter "system.applicationHost/applicationPools/add[@name='$PoolName']/environmentVariables" `
-        -Name Collection `
-        -ErrorAction SilentlyContinue |
-        Where-Object { $_.name -eq $VarName }
+    # IISAdministration config collection API (MACHINE/WEBROOT/APPHOST PSPath
+    # belongs to the same IIS:\ family that fails across WinPSCompat).
+    Start-IISCommitDelay
+    try {
+        $poolSection    = Get-IISConfigSection -SectionPath 'system.applicationHost/applicationPools'
+        $poolCollection = Get-IISConfigCollection -ConfigElement $poolSection
+        $poolElement    = Get-IISConfigCollectionElement -ConfigCollection $poolCollection -ConfigAttribute @{ name = $PoolName }
 
-    if ($existing) {
-        Write-Warn "$VarName already set on $PoolName — not overwriting"
-        return
+        $envVarsElement = Get-IISConfigElement -ConfigElement $poolElement -ChildElementName 'environmentVariables'
+        $envVarsColl    = Get-IISConfigCollection -ConfigElement $envVarsElement
+
+        # Check for an existing entry with this name (idempotence — never overwrite).
+        $alreadySet = $false
+        foreach ($ev in $envVarsColl.GetCollection()) {
+            $existingName = Get-IISConfigAttributeValue -ConfigElement $ev -AttributeName 'name'
+            if ($existingName -eq $VarName) { $alreadySet = $true; break }
+        }
+
+        if ($alreadySet) {
+            Write-Warn "$VarName already set on $PoolName — not overwriting"
+            return
+        }
+
+        $bstr  = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureValue)
+        $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+
+        New-IISConfigCollectionElement -ConfigCollection $envVarsColl -ConfigAttribute @{ name = $VarName; value = $plain } | Out-Null
+
+        $plain = $null
+        Write-Ok "$VarName → $PoolName environment"
     }
-
-    $bstr  = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($SecureValue)
-    $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
-    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
-
-    Add-WebConfigurationProperty `
-        -PSPath 'MACHINE/WEBROOT/APPHOST' `
-        -Filter "system.applicationHost/applicationPools/add[@name='$PoolName']/environmentVariables" `
-        -Name '.' `
-        -Value @{ name = $VarName; value = $plain }
-
-    $plain = $null
-    Write-Ok "$VarName → $PoolName environment"
+    finally {
+        Stop-IISCommitDelay -Commit $true
+    }
 }
 
 $secretsSet = $false
