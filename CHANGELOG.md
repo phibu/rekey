@@ -12,6 +12,25 @@ Versions follow [Semantic Versioning](https://semver.org/).
 
 ---
 
+## [2.0.0-alpha.7] — 2026-04-22
+
+Completes the PowerShell 7 compatibility migration that began in alpha.4. All remaining `WebAdministration` call sites that depend on typed-object graphs crossing the WinPSCompat proxy have been ported to `IISAdministration` equivalents. No application code changes.
+
+### Fixed
+
+- **HTTPS binding cert attachment** — `$binding.AddSslCertificate($thumbprint, 'My')` was a WinPSCompat-proxied instance method; methods are stripped across the deserialization boundary, so this call was guaranteed to fail on every PS 7 IIS install with `-CertThumbprint`. Replaced with `New-IISSiteBinding -CertificateThumbPrint <hash> -CertStoreLocation 'My'`, which takes the cert as a direct parameter on an IISAdministration-native cmdlet. *(installer)*
+- **Port-80 conflict detection** — `Get-WebBinding | Where { $_.ItemXPath -match "name='...'" }` relied on an ETS (Extended Type System) property that doesn't survive WinPSCompat serialization. Replaced with a direct walk of `system.applicationHost/sites` via `Get-IISConfigCollection`. *(installer)*
+- **`Test-PortFree` IIS-binding ownership check** — `$iisBinding.Bindings.Collection.bindingInformation` is a nested ETS chain that becomes `$null` across the proxy boundary. Replaced with `Get-IISSiteBinding`, which returns objects whose `.BindingInformation` is a real .NET string property. *(installer)*
+- **HTTP/HTTPS binding removal** — `$existingBinding | Remove-WebBinding` pipeline failed to bind parameters on deserialized proxy objects. Replaced with explicit `Remove-IISSiteBinding -Name -BindingInformation -Protocol -Confirm:$false`. *(installer)*
+- **App pool environment variables** — `Get-WebConfigurationProperty -PSPath 'MACHINE/WEBROOT/APPHOST'` is part of the same `IIS:\` drive family that doesn't work from the PS 7 caller runspace. Replaced with the `Get-IISConfigCollection` / `New-IISConfigCollectionElement` pattern (wrapped in `Start-IISCommitDelay` / `Stop-IISCommitDelay -Commit $true`). *(installer)*
+- **`Restore-StoppedForeignSites`** — defensive `$script:IISAvailable` guard added so the handler cannot emit a confusing "Start-Website not recognized" error if it runs before the modules load. *(installer, hygiene)*
+
+### Verdict
+
+After six installer-focused alphas, the installer now uses `IISAdministration` for every typed-object / drive-dependent path and `WebAdministration` only for plain verb-noun cmdlets (`New-Website`, `Start-Website`, `Stop-Website`, `New-WebAppPool`, etc.) that have no proxy-vulnerable members. No more `WebAdministration`-proxy-shaped bugs should surface.
+
+---
+
 ## [2.0.0-alpha.6] — 2026-04-22
 
 Fifth installer hardening pass. No application code changes.
