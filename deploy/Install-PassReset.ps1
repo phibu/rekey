@@ -488,52 +488,43 @@ function Resolve-HttpsCertificate {
     return $null
 }
 
-function Initialize-WebAdministration {
+function Initialize-IIS {
     <#
     .SYNOPSIS
-    Best-effort load of the WebAdministration module and IIS:\ PSDrive. Sets
-    $script:WebAdministrationAvailable to indicate whether IIS management is
-    usable. Never aborts — callers that strictly require IIS management must
-    check the flag themselves (e.g. after hosting-mode resolution).
+    Loads the IISAdministration module (PowerShell Core-friendly, no compat-session).
+    Also loads WebAdministration for cmdlet-level compat (Get-Website, New-Website, etc.
+    still work via WinPSCompat), but does NOT attempt drive-based operations.
+    Sets $script:IISAvailable to indicate whether IIS management is usable.
+    Never aborts — callers that strictly require IIS management must check the
+    flag themselves (e.g. after hosting-mode resolution).
     #>
     [CmdletBinding()]
     param()
 
-    $script:WebAdministrationAvailable = $false
+    $script:IISAvailable = $false
+    $script:IISLoadError = $null
 
+    # Primary: IISAdministration (PS Core-native, no compat session needed).
+    # Replaces every Set-ItemProperty "IIS:\..." / Get-WebConfigurationProperty -PSPath 'IIS:\'
+    # call site, because the IIS:\ PSDrive is NOT auto-proxied from the WinPSCompat
+    # remoting session into the caller's PS 7 runspace.
     try {
-        # WebAdministration is a legacy PSSnapIn-based module that only exists in
-        # Windows PowerShell (Desktop edition). PS 7 can't load it natively
-        # (PSSnapIn types were removed from PS Core) — importing always goes
-        # through the WinPSCompat remoting session. Silence the noisy
-        # deserialization warning emitted on import.
-        Import-Module WebAdministration -WarningAction SilentlyContinue -ErrorAction Stop
+        Import-Module IISAdministration -WarningAction SilentlyContinue -ErrorAction Stop
     } catch {
-        $script:WebAdministrationLoadError = $_.Exception.Message
+        $script:IISLoadError = $_.Exception.Message
         return
     }
 
-    # Importing WebAdministration via the WinPSCompat session registers the IIS:\
-    # PSDrive INSIDE the compat session, not in our local PS 7 session. Downstream
-    # Set-ItemProperty "IIS:\AppPools\..." calls then fail with the notorious
-    # 'Cannot find drive. A drive with the name "IIS" does not exist' error.
-    # Use the modern IISAdministration module (ships with IIS 8.5+, PS Core-native)
-    # for drive-less operations, OR register the IIS:\ drive manually using the
-    # WebAdministration provider surfaced through the compat session.
-    #
-    # Explicit drive registration is the minimal change — preserves all existing
-    # Set-ItemProperty "IIS:\..." call sites below.
-    if (-not (Get-PSDrive -Name 'IIS' -ErrorAction SilentlyContinue)) {
-        try {
-            New-PSDrive -Name 'IIS' -PSProvider WebAdministration -Root 'MACHINE/WEBROOT/APPHOST' `
-                -Scope Script -ErrorAction Stop | Out-Null
-        } catch {
-            $script:WebAdministrationLoadError = $_.Exception.Message
-            return
-        }
+    # Secondary: WebAdministration for Get-Website / New-WebAppPool / New-WebBinding
+    # (cmdlet-level proxies work through WinPSCompat; we just don't use the IIS:\ drive).
+    try {
+        Import-Module WebAdministration -WarningAction SilentlyContinue -ErrorAction Stop
+    } catch {
+        $script:IISLoadError = "IISAdministration loaded but WebAdministration failed: $($_.Exception.Message)"
+        return
     }
 
-    $script:WebAdministrationAvailable = $true
+    $script:IISAvailable = $true
 }
 
 function Test-PortFree {
@@ -548,7 +539,7 @@ function Test-PortFree {
 
     # Hook point for IIS-site-owned bindings during migration.
     # Without WebAdministration loaded we can't tell if an IIS site owns this port. Fall through to process-owner detection — safer than assuming the port is free.
-    if ($OwnedByIisSite -and $script:WebAdministrationAvailable) {
+    if ($OwnedByIisSite -and $script:IISAvailable) {
         $iisBinding = Get-Website -Name $OwnedByIisSite -ErrorAction SilentlyContinue
         if ($iisBinding -and ($iisBinding.Bindings.Collection.bindingInformation -match ":${Port}:")) {
             Write-Verbose "Port $Port is bound by IIS site '$OwnedByIisSite' — will be freed at teardown."
@@ -662,18 +653,18 @@ if ($env:PASSRESET_TEST_MODE -eq '1') {
     return
 }
 
-# Load WebAdministration early — both hosting-mode resolution (Get-Website) and
-# Test-PortFree depend on it. Best-effort at this stage: we don't yet know
+# Load IIS management modules early — both hosting-mode resolution (Get-Website) and
+# Test-PortFree depend on them. Best-effort at this stage: we don't yet know
 # whether the operator wants IIS mode. Strict IIS requirement is re-checked
 # after $HostingMode is resolved below.
-Initialize-WebAdministration
-if (-not $script:WebAdministrationAvailable) {
-    Write-Warn "WebAdministration module not loaded — IIS-related checks (existing site detection, IIS-owned port bindings) will be skipped."
+Initialize-IIS
+if (-not $script:IISAvailable) {
+    Write-Warn "IIS modules not loaded — IIS-related checks (existing site detection, IIS-owned port bindings) will be skipped."
 }
 
 # ─── Resolve hosting mode (prompt on fresh install, default on upgrade) ────
 if (-not $HostingMode) {
-    $existingSite = if ($script:WebAdministrationAvailable) {
+    $existingSite = if ($script:IISAvailable) {
         Get-Website -Name 'PassReset' -ErrorAction SilentlyContinue
     } else { $null }
     $default = if ($existingSite) { 'IIS' } else { $null }
@@ -681,18 +672,18 @@ if (-not $HostingMode) {
 }
 Write-Host "Hosting mode: $HostingMode" -ForegroundColor Cyan
 
-if ($HostingMode -eq 'IIS' -and -not $script:WebAdministrationAvailable) {
+if ($HostingMode -eq 'IIS' -and -not $script:IISAvailable) {
     Abort @"
-IIS hosting mode was selected, but the WebAdministration PowerShell module
-could not be loaded (or the IIS:\ PSDrive is not available). This installer
-cannot configure AppPools or Sites without it.
+IIS hosting mode was selected, but the required IIS PowerShell modules
+(IISAdministration and WebAdministration) could not be loaded. This installer
+cannot configure AppPools or Sites without them.
 
 Cause: IIS Management Scripts and Tools role is not installed on this host.
 
 Fix: run as Administrator and enable the feature, then re-run this installer:
   dism.exe /online /enable-feature /featurename:IIS-ManagementScriptingTools /all
 
-Underlying error: $($script:WebAdministrationLoadError)
+Underlying error: $($script:IISLoadError)
 "@
 }
 
@@ -864,12 +855,12 @@ if (-not (Test-Path $brandPath)) {
 }
 
 # Stop the site/pool before copying so locked files are released.
-# WebAdministration + IIS:\ PSDrive are loaded earlier by Initialize-WebAdministration.
+# IISAdministration + WebAdministration are loaded earlier by Initialize-IIS.
 # This block runs mode-agnostically (upgrade detection needs $siteExists for all modes),
-# so we short-circuit on $script:WebAdministrationAvailable — Test-Path against the
-# IIS:\ drive would throw under strict mode on non-IIS hosts.
-$poolExists = $script:WebAdministrationAvailable -and (Test-Path "IIS:\AppPools\$AppPoolName")
-$siteExists = $script:WebAdministrationAvailable -and (Test-Path "IIS:\Sites\$SiteName")
+# so we short-circuit on $script:IISAvailable — the IISAdministration cmdlets
+# would throw under strict mode on non-IIS hosts.
+$poolExists = $script:IISAvailable -and [bool](Get-IISAppPool -Name $AppPoolName -ErrorAction SilentlyContinue)
+$siteExists = $script:IISAvailable -and [bool](Get-IISSite    -Name $SiteName    -ErrorAction SilentlyContinue)
 
 # ─── Upgrade detection ────────────────────────────────────────────────────────
 
@@ -1063,15 +1054,15 @@ $existingIdentityType = $null
 $existingIdentity     = $null
 if ($poolExists) {
     try {
-        # STAB-003: Get-WebConfigurationProperty is reliable across Windows PowerShell 5.1
-        # and PowerShell 7.x; the previous Get-ItemProperty | .Value pattern intermittently
-        # returned $null on PS 7.x and triggered a spurious "Could not read" warning.
-        $appPoolFilter = "system.applicationHost/applicationPools/add[@name='$AppPoolName']"
-        $existingIdentityType = (Get-WebConfigurationProperty -PSPath 'IIS:\' `
-            -Filter $appPoolFilter -Name processModel.identityType -ErrorAction Stop).Value
-        if ($existingIdentityType -eq 'SpecificUser' -or $existingIdentityType -eq 3) {
-            $existingIdentity = (Get-WebConfigurationProperty -PSPath 'IIS:\' `
-                -Filter $appPoolFilter -Name processModel.userName -ErrorAction Stop).Value
+        # IISAdministration: property access on the Microsoft.Web.Administration.ApplicationPool
+        # object returned by Get-IISAppPool. IdentityType is a strongly-typed enum — we compare
+        # via string form ('SpecificUser'). The earlier WebAdministration 'IIS:\' PSDrive read
+        # pattern (Get-WebConfigurationProperty -PSPath 'IIS:\') does not work in PS 7 because
+        # the IIS:\ drive lives in the WinPSCompat session and is not auto-proxied.
+        $pool = Get-IISAppPool -Name $AppPoolName -ErrorAction Stop
+        $existingIdentityType = [string]$pool.ProcessModel.IdentityType
+        if ($existingIdentityType -eq 'SpecificUser') {
+            $existingIdentity = $pool.ProcessModel.UserName
         }
     } catch {
         Write-Warning "Could not read existing AppPool identity: $($_.Exception.Message). Will fall through to default handling."
@@ -1083,40 +1074,53 @@ if (-not $poolExists) {
     Write-Ok "Created app pool $AppPoolName"
 }
 
-# No managed code — ASP.NET Core runs in-process via the hosting module
-Set-ItemProperty "IIS:\AppPools\$AppPoolName" managedRuntimeVersion ''
-Set-ItemProperty "IIS:\AppPools\$AppPoolName" enable32BitAppOnWin64 $false
-Set-ItemProperty "IIS:\AppPools\$AppPoolName" startMode 'AlwaysRunning'
-Set-ItemProperty "IIS:\AppPools\$AppPoolName" autoStart $true
+# IISAdministration uses an explicit commit model — property changes on Get-IISAppPool
+# do NOT auto-persist. Wrap all app-pool edits in Start-IISCommitDelay /
+# Stop-IISCommitDelay -Commit so the whole group is applied atomically (matches how
+# the IIS Manager GUI applies changes). The try/finally ensures Stop-IISCommitDelay
+# runs even if a setter throws — otherwise the commit delay leaks.
+Start-IISCommitDelay
+try {
+    $pool = Get-IISAppPool -Name $AppPoolName
 
-# BUG-003: Four-branch identity resolution.
-# NEVER read or round-trip processModel.password — it is write-only.
-if ($AppPoolIdentity) {
-    # Explicit operator override — current behaviour preserved.
-    if (-not $AppPoolPassword) {
-        Abort 'AppPoolPassword must be supplied when AppPoolIdentity is set. Use: -AppPoolPassword (Read-Host ''App pool password'' -AsSecureString)'
+    # No managed code — ASP.NET Core runs in-process via the hosting module
+    $pool.ManagedRuntimeVersion = ''
+    $pool.Enable32BitAppOnWin64 = $false
+    $pool.StartMode             = 'AlwaysRunning'
+    $pool.AutoStart             = $true
+
+    # BUG-003: Four-branch identity resolution.
+    # NEVER read or round-trip processModel.password — it is write-only.
+    if ($AppPoolIdentity) {
+        # Explicit operator override — current behaviour preserved.
+        if (-not $AppPoolPassword) {
+            Abort 'AppPoolPassword must be supplied when AppPoolIdentity is set. Use: -AppPoolPassword (Read-Host ''App pool password'' -AsSecureString)'
+        }
+        $bstr          = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($AppPoolPassword)
+        $plainPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+        [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+        $pool.ProcessModel.IdentityType = 'SpecificUser'
+        $pool.ProcessModel.UserName     = $AppPoolIdentity
+        $pool.ProcessModel.Password     = $plainPassword
+        $plainPassword = $null
+        Write-Ok "App pool identity: $AppPoolIdentity (explicit override)"
     }
-    $bstr          = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($AppPoolPassword)
-    $plainPassword = [System.Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
-    [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
-    Set-ItemProperty "IIS:\AppPools\$AppPoolName" processModel.userName     $AppPoolIdentity
-    Set-ItemProperty "IIS:\AppPools\$AppPoolName" processModel.password     $plainPassword
-    Set-ItemProperty "IIS:\AppPools\$AppPoolName" processModel.identityType 3  # SpecificUser
-    $plainPassword = $null
-    Write-Ok "App pool identity: $AppPoolIdentity (explicit override)"
+    elseif ($poolExists -and $existingIdentityType -eq 'SpecificUser') {
+        # Preserve existing service account on upgrade — DO NOT touch identityType, userName, or password.
+        Write-Ok "App pool identity preserved: $existingIdentity (use -AppPoolIdentity to override)"
+    }
+    elseif ($poolExists) {
+        # Existing built-in identity (ApplicationPoolIdentity / NetworkService / LocalService / LocalSystem) — leave untouched on upgrade.
+        Write-Ok "App pool identity preserved: $existingIdentityType"
+    }
+    else {
+        # Fresh install, no override → default to ApplicationPoolIdentity.
+        $pool.ProcessModel.IdentityType = 'ApplicationPoolIdentity'
+        Write-Ok 'App pool identity: ApplicationPoolIdentity (new pool default)'
+    }
 }
-elseif ($poolExists -and ($existingIdentityType -eq 'SpecificUser' -or $existingIdentityType -eq 3)) {
-    # Preserve existing service account on upgrade — DO NOT touch identityType, userName, or password.
-    Write-Ok "App pool identity preserved: $existingIdentity (use -AppPoolIdentity to override)"
-}
-elseif ($poolExists) {
-    # Existing built-in identity (ApplicationPoolIdentity / NetworkService / LocalService / LocalSystem) — leave untouched on upgrade.
-    Write-Ok "App pool identity preserved: $existingIdentityType"
-}
-else {
-    # Fresh install, no override → default to ApplicationPoolIdentity (4).
-    Set-ItemProperty "IIS:\AppPools\$AppPoolName" processModel.identityType 4  # ApplicationPoolIdentity
-    Write-Ok 'App pool identity: ApplicationPoolIdentity (new pool default)'
+finally {
+    Stop-IISCommitDelay -Commit
 }
 
 # ─── 5. IIS site ──────────────────────────────────────────────────────────────
@@ -1197,8 +1201,19 @@ if (-not $siteExists) {
         -Force | Out-Null
     Write-Ok "Created site $SiteName (HTTP :$selectedHttpPort placeholder)"
 } else {
-    Set-ItemProperty "IIS:\Sites\$SiteName" physicalPath $PhysicalPath
-    Set-ItemProperty "IIS:\Sites\$SiteName" applicationPool $AppPoolName
+    # Upgrade path: apply physicalPath / applicationPool via IISAdministration.
+    # On the Microsoft.Web.Administration.Site object the physical path lives on the
+    # root application's root virtual directory, not as a direct top-level property.
+    # Commit-delay wrapper groups both edits atomically.
+    Start-IISCommitDelay
+    try {
+        $site = Get-IISSite -Name $SiteName
+        $site.Applications['/'].VirtualDirectories['/'].PhysicalPath = $PhysicalPath
+        $site.Applications['/'].ApplicationPoolName                  = $AppPoolName
+    }
+    finally {
+        Stop-IISCommitDelay -Commit
+    }
     Write-Ok "Updated site $SiteName"
 }
 
